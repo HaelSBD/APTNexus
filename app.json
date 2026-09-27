@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "APTNexus",
+    "slug": "APTNexus",
+    "version": "1.0.2",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#E6EEF6",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E6EEF6"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses your location for clock-in, patrols, and on-duty tracking.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses your location to record your trail while you are clocked in.",
+        "NSCameraUsageDescription": "This app uses the camera for photos and scans.",
+        "NSPhotoLibraryUsageDescription": "This app uses your photos for a profile picture.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E6EEF6"
+      },
+      "package": "com.aptnexus.app",
+      "backgroundColor": "#E6EEF6",
+      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "appUrl": "https://aptnexus.sbd-one.com",
+      "apiUrl": "https://aptnexus.sbd-one.com",
+      "eas": {
+        "projectId": "81e6331b-7fa5-4a89-9130-8e8cc3f30771"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "backgroundColor": "#E6EEF6",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to your photos.",
+          "cameraPermission": "Allow access to your camera.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow camera access for photos and scans.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow location access for clock-in and tracking."
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
+    ]
+  }
+}
