@@ -31,7 +31,7 @@
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#E6EEF6"
+        "backgroundColor": "#071E40"
       },
       "package": "com.aptnexus.app",
       "backgroundColor": "#E6EEF6",
@@ -81,7 +81,28 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "Light",
+            "ios": "./assets/icons/light.png",
+            "android": {
+              "foregroundImage": "./assets/icons/light.png",
+              "backgroundColor": "#FCFDFC"
+            }
+          },
+          {
+            "name": "Sunset",
+            "ios": "./assets/icons/sunset.png",
+            "android": {
+              "foregroundImage": "./assets/icons/sunset.png",
+              "backgroundColor": "#5A7CE6"
+            }
+          }
+        ]
+      ]
     ]
   }
 }

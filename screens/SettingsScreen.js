@@ -14,6 +14,7 @@ import {
   Platform,
   ActivityIndicator,
   BackHandler,
+  Image,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +31,13 @@ import { playToggleFeedback } from "../utils/alertFeedback";
 import { askPermission, openAppSettings, readPermissions } from "../utils/permissions";
 import Avatar from "../components/Avatar";
 import { isAdminRole, isSuperAdmin } from "../utils/roles";
+import { applyAppIcon } from "../utils/appIcon";
+
+const APP_ICONS = [
+  { id: "midnight", source: require("../assets/icons/midnight-preview.png") },
+  { id: "light", source: require("../assets/icons/light-preview.png") },
+  { id: "sunset", source: require("../assets/icons/sunset-preview.png") },
+];
 
 const LANGUAGES = [
   { id: "en", short: "EN", label: "English" },
@@ -68,6 +76,8 @@ const SettingsScreen = () => {
   const lang = languageMeta(settings.language);
   const onDuty = Boolean(duty?.clockedIn);
   const appearanceLabel = settings.appearance === "dark" ? t("dark") : settings.appearance === "light" ? t("light") : t("auto");
+  const iconLabel =
+    settings.appIcon === "light" ? t("iconLight") : settings.appIcon === "sunset" ? t("iconSunset") : t("iconMidnight");
 
   const loadPermissions = useCallback(async () => {
     const next = await readPermissions();
@@ -169,6 +179,7 @@ const SettingsScreen = () => {
 
   const titles = {
     appearance: t("appearance"),
+    icon: t("appIcon"),
     notifications: t("notifications"),
     password: t("changePassword"),
     language: t("language"),
@@ -232,6 +243,15 @@ const SettingsScreen = () => {
                   subtitle={appearanceLabel}
                   badge={appearanceLabel}
                   onPress={() => setPage("appearance")}
+                />
+                <LinkRow
+                  styles={styles}
+                  colors={colors}
+                  icon="color-palette-outline"
+                  title={t("appIcon")}
+                  subtitle={t("appIconHint")}
+                  badge={iconLabel}
+                  onPress={() => setPage("icon")}
                 />
                 <LinkRow
                   styles={styles}
@@ -306,6 +326,37 @@ const SettingsScreen = () => {
                     <View>
                       <Text style={styles.choiceTitle}>{option.label}</Text>
                       <Text style={styles.choiceHint}>{option.hint}</Text>
+                    </View>
+                    {on ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : <View style={styles.choiceOff} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {page === "icon" ? (
+            <View style={styles.group}>
+              {APP_ICONS.map((option, index, list) => {
+                const on = (settings.appIcon || "midnight") === option.id;
+                const label = option.id === "light" ? t("iconLight") : option.id === "sunset" ? t("iconSunset") : t("iconMidnight");
+                const hint = option.id === "light" ? t("iconLightHint") : option.id === "sunset" ? t("iconSunsetHint") : t("iconMidnightHint");
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.choice, index === list.length - 1 && styles.choiceLast]}
+                    onPress={async () => {
+                      setSetting("appIcon", option.id);
+                      const result = await applyAppIcon(option.id);
+                      toast.success(result === "applied" ? t("appIconApplied") : t("appIconSaved"));
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.iconChoice}>
+                      <Image source={option.source} style={styles.iconPreview} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.choiceTitle}>{label}</Text>
+                        <Text style={styles.choiceHint}>{hint}</Text>
+                      </View>
                     </View>
                     {on ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : <View style={styles.choiceOff} />}
                   </TouchableOpacity>
@@ -674,6 +725,8 @@ const makeStyles = (colors, shadows) =>
       borderBottomColor: colors.border,
     },
     choiceLast: { borderBottomWidth: 0 },
+    iconChoice: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12, paddingRight: 12 },
+    iconPreview: { width: 48, height: 48, borderRadius: 12, backgroundColor: colors.muted },
     choiceTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
     choiceHint: { marginTop: 2, fontSize: 12, color: colors.textSecondary },
     choiceOff: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: colors.border },
