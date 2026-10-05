@@ -5,7 +5,7 @@ import { withMediaUrls } from "../utils/media";
 import { useSettings } from "./SettingsContext";
 import { useT } from "../utils/i18n";
 import { toast } from "../components/Toast";
-import { isAdminRole, isSecurityRole } from "../utils/roles";
+import { isAdminRole } from "../utils/roles";
 
 function sameUser(a, b) {
   if (a === b) return true;
@@ -137,9 +137,6 @@ export function UserProvider({ children }) {
       refresh,
       signIn: async (identifier, password, { replaceSession = false } = {}) => {
         const data = await api.login(identifier, password, replaceSession);
-        if (!isAdminRole(data.user) && !isSecurityRole(data.user)) {
-          throw new Error(t("staffOnly"));
-        }
         await setToken(data.token);
         const nextUser = withMediaUrls(data.user);
         setUser(nextUser);

@@ -26,8 +26,11 @@ export function formatRelativeTime(timestamp) {
 
 export function formatAuthError(error) {
   const message = String(error?.message || "");
-  if (/invalid username or password|security staff only/i.test(message)) {
+  if (/invalid username or password/i.test(message)) {
     return tr("invalidCredentials");
+  }
+  if (/security staff only/i.test(message)) {
+    return tr("staffOnly");
   }
   if (/bad gateway|api is not running/i.test(message)) {
     return tr("cannotReach");

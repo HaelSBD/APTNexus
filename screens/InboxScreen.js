@@ -41,7 +41,26 @@ const openRelated = (navigation, item, admin) => {
     return;
   }
   if (item.kind === "chat") {
-    openChat(navigation, item.meta?.channel ? { channel: item.meta.channel } : {});
+    const channel = item.meta?.channel || "";
+    if (channel.startsWith("g:") || item.meta?.groupId) {
+      openChat(navigation, {
+        tab: "Groups",
+        groupId: item.meta?.groupId || channel.slice(2),
+        groupName: item.meta?.groupName || "",
+        channel,
+      });
+      return;
+    }
+    if (channel.startsWith("dm:") || item.meta?.peerId) {
+      openChat(navigation, {
+        channel,
+        peerId: item.meta?.peerId || "",
+        peerName: item.actorName || "",
+        desk: item.meta?.desk || "",
+      });
+      return;
+    }
+    openChat(navigation, channel ? { channel } : {});
     return;
   }
   if (admin) {

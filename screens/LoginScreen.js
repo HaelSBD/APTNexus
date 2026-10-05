@@ -14,11 +14,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
+import ScreenBackdrop from "../components/ScreenBackdrop";
 import { toast } from "../components/Toast";
 import { formatAuthError } from "../utils/format";
 import { useCurrentUser } from "../context/UserContext";
 import { useSettings, useThemedStyles } from "../context/SettingsContext";
-import ScreenBackdrop from "../components/ScreenBackdrop";
 import { useT } from "../utils/i18n";
 
 const LoginScreen = () => {

@@ -347,7 +347,13 @@ const SettingsScreen = () => {
                     onPress={async () => {
                       setSetting("appIcon", option.id);
                       const result = await applyAppIcon(option.id);
-                      toast.success(result === "applied" ? t("appIconApplied") : t("appIconSaved"));
+                      if (result === "applied") {
+                        toast.success(t("appIconApplied"));
+                      } else if (result === "unsupported") {
+                        toast.error(t("appIconNeedsBuild"));
+                      } else {
+                        toast.error(t("appIconSaved"));
+                      }
                     }}
                     activeOpacity={0.85}
                   >

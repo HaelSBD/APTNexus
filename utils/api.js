@@ -46,11 +46,20 @@ function parseResponse(status, text) {
   if (status === 502 || status === 503 || status === 530) {
     throw new Error("APTNexus API is not running on the server (bad gateway).");
   }
-  if (typeof text === "string" && text.trim().startsWith("<")) {
-    throw new Error("Could not reach the APTNexus API. Check that the admin API is running.");
+  if (typeof text === "string" && (/cannot post|cannot get|cannot put|cannot patch|cannot delete/i.test(text) || text.trim().startsWith("<"))) {
+    if (/cannot post \/api\/chat\/groups/i.test(text)) {
+      throw new Error("Group chat API is not deployed yet. Update and restart APTNexus-Admin, then try again.");
+    }
+    if (text.trim().startsWith("<")) {
+      throw new Error("Could not reach the APTNexus API. Check that the admin API is running.");
+    }
   }
   if (status < 200 || status >= 300) {
-    const error = new Error(data.error || `Request failed (${status}).`);
+    let message = data.error || `Request failed (${status}).`;
+    if (/unknown chat/i.test(String(message))) {
+      message = "Chat API is outdated. Restart APTNexus-Admin on the server, then try again.";
+    }
+    const error = new Error(message);
     error.status = status;
     error.code = data.code || "";
     if (error.code === "SESSION_REPLACED" || error.code === "SESSION_EXPIRED") {
@@ -161,10 +170,23 @@ export const api = {
   deleteNotification: (id) => request(`/api/notifications/${encodeURIComponent(id)}`, { method: "DELETE" }),
   registerDeviceKey: (publicKey) => request("/api/crypto/keys", { method: "PUT", body: { publicKey } }),
   cryptoPeers: () => request("/api/crypto/peers"),
+  chatContacts: (desk) => request(`/api/chat/contacts?desk=${encodeURIComponent(desk || "admin")}`),
+  chatGroups: () => request("/api/chat/groups"),
+  chatGroup: (id) => request(`/api/chat/groups/${encodeURIComponent(id)}`),
+  createChatGroup: (body) => request("/api/chat/groups", { method: "POST", body }),
+  updateChatGroup: (id, body, file) =>
+    request(`/api/chat/groups/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body,
+      file: file ? { field: "photo", ...file } : undefined,
+    }),
   chat: (channel) => request(`/api/chat?channel=${encodeURIComponent(channel || "group")}`),
   chatUnread: (since) => request(`/api/chat/unread${since ? `?since=${encodeURIComponent(since)}` : ""}`),
   sendChat: (channel, payload) =>
-    request("/api/chat", { method: "POST", body: typeof payload === "string" ? { channel, message: payload } : { channel, ...payload } }),
+    request("/api/chat", {
+      method: "POST",
+      body: typeof payload === "string" ? { channel, message: payload } : { channel, ...payload },
+    }),
   editChat: (id, payload) =>
     request(`/api/chat/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -176,3 +198,15 @@ export const api = {
     request("/api/announcements", { method: "POST", body, file: file ? { field: "photo", ...file } : undefined }),
   deleteAnnouncement: (id) => request(`/api/announcements/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
+
+export function dmChannel(userA, userB) {
+  const a = String(userA || "");
+  const b = String(userB || "");
+  if (!a || !b || a === b) return "";
+  return a < b ? `dm:${a}:${b}` : `dm:${b}:${a}`;
+}
+
+export function groupChannel(groupId) {
+  const id = String(groupId || "").trim();
+  return id ? `g:${id}` : "";
+}

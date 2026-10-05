@@ -6,13 +6,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PageHeader from "../components/PageHeader";
 import ScreenBackdrop from "../components/ScreenBackdrop";
+import Avatar from "../components/Avatar";
 import { useSettings, useThemedStyles } from "../context/SettingsContext";
 import { api } from "../utils/api";
 import { formatRelativeTime } from "../utils/format";
+import { isSecurityRole } from "../utils/roles";
 import { useT } from "../utils/i18n";
 
 const stampMs = (item) => {
-  const date = new Date(item?.createdAt);
+  const date = new Date(item?.createdAt || item?.at);
   const ms = date.getTime();
   return Number.isNaN(ms) ? 0 : ms;
 };
@@ -34,7 +36,6 @@ const shiftLength = (item, now, t) => {
   return rest ? t("hoursMins", { h: hours, m: rest }) : t("hoursShort", { n: hours });
 };
 
-const initial = (name) => String(name || "S").trim().charAt(0).toUpperCase();
 const isClockIn = (item) => String(item?.action || "") === "clock_in";
 
 const DutyBoardScreen = () => {
@@ -43,20 +44,32 @@ const DutyBoardScreen = () => {
   const { colors } = useSettings();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const [staff, setStaff] = useState([]);
   const [logs, setLogs] = useState([]);
   const [now, setNow] = useState(Date.now());
 
   const load = useCallback(async () => {
     try {
-      const data = await api.dutyLogs();
-      setLogs(data.rows || []);
-    } catch {
-      try {
-        const data = await api.overview();
-        setLogs(data.dutyLogs || []);
-      } catch {
-        setLogs([]);
+      const [usersData, logsData] = await Promise.all([
+        api.users().catch(() => null),
+        api.dutyLogs().catch(() => null),
+      ]);
+      let nextStaff = (usersData?.rows || []).filter((row) => isSecurityRole(row) && row.active !== false);
+      let nextLogs = logsData?.rows || [];
+
+      if (!usersData || !logsData) {
+        const overview = await api.overview().catch(() => null);
+        if (!usersData) {
+          nextStaff = (overview?.users || []).filter((row) => isSecurityRole(row) && row.active !== false);
+        }
+        if (!logsData) nextLogs = overview?.dutyLogs || [];
       }
+
+      setStaff(nextStaff);
+      setLogs(nextLogs);
+    } catch {
+      setStaff([]);
+      setLogs([]);
     }
   }, []);
 
@@ -71,32 +84,128 @@ const DutyBoardScreen = () => {
     }, [load]),
   );
 
-  const sorted = useMemo(() => [...logs].sort((a, b) => stampMs(b) - stampMs(a)), [logs]);
-  const onDuty = useMemo(() => {
-    const latest = new Map();
+  const latestByGuard = useMemo(() => {
+    const sorted = [...logs].sort((a, b) => stampMs(b) - stampMs(a));
+    const map = new Map();
     sorted.forEach((item) => {
-      const key = item.guardId || item.guardName;
-      if (!key || latest.has(key)) return;
-      latest.set(key, item);
+      const key = String(item.guardId || item.guardName || "");
+      if (!key || map.has(key)) return;
+      map.set(key, item);
     });
-    return [...latest.values()].filter(isClockIn).sort((a, b) => stampMs(a) - stampMs(b));
-  }, [sorted]);
+    return map;
+  }, [logs]);
+
+  const roster = useMemo(() => {
+    const rows = staff.map((person) => {
+      const id = String(person.id || "");
+      const latest =
+        latestByGuard.get(id) ||
+        latestByGuard.get(String(person.displayName || "")) ||
+        latestByGuard.get(String(person.username || "")) ||
+        null;
+      const working = latest ? isClockIn(latest) : false;
+      return {
+        id,
+        displayName: person.displayName || person.username || t("securityWord"),
+        username: person.username || "",
+        photoURL: person.photoURL || "",
+        working,
+        site: latest?.site || person.address || "APTNexus",
+        latest,
+      };
+    });
+
+    // Include any clocked-in guards missing from the user list (legacy logs).
+    latestByGuard.forEach((item, key) => {
+      if (!isClockIn(item)) return;
+      if (rows.some((row) => row.id === key || row.displayName === item.guardName)) return;
+      rows.push({
+        id: key,
+        displayName: item.guardName || t("securityWord"),
+        username: "",
+        photoURL: "",
+        working: true,
+        site: item.site || "APTNexus",
+        latest: item,
+      });
+    });
+
+    return rows.sort((a, b) => {
+      if (a.working !== b.working) return a.working ? -1 : 1;
+      return String(a.displayName).localeCompare(String(b.displayName), undefined, { sensitivity: "base" });
+    });
+  }, [staff, latestByGuard, t]);
+
+  const onDutyCount = roster.filter((row) => row.working).length;
+  const offDutyCount = roster.length - onDutyCount;
+  const sites = [...new Set(roster.filter((row) => row.working).map((row) => row.site || "APTNexus"))];
 
   const todayIns = useMemo(() => {
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
-    return sorted.filter((item) => isClockIn(item) && stampMs(item) >= start.getTime()).length;
-  }, [sorted, now]);
+    return logs.filter((item) => isClockIn(item) && stampMs(item) >= start.getTime()).length;
+  }, [logs, now]);
 
-  const activity = useMemo(() => sorted.slice(0, 24), [sorted]);
-  const lastStamp = activity[0];
-  const sites = [...new Set(onDuty.map((item) => item.site || "APTNexus"))];
+  const renderCard = ({ item }) => (
+    <View style={[styles.card, item.working ? styles.cardOn : styles.cardOff]}>
+      <View style={styles.cardTop}>
+        <Avatar photoURL={item.photoURL} style={styles.avatar} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title} numberOfLines={1}>
+            {item.displayName}
+          </Text>
+          {item.username ? (
+            <Text style={styles.username} numberOfLines={1}>
+              @{item.username}
+            </Text>
+          ) : null}
+          <View style={styles.metaRow}>
+            <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+            <Text style={styles.meta} numberOfLines={1}>
+              {item.working ? item.site : t("notOnSite")}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.statusTag, item.working ? styles.statusOn : styles.statusOff]}>
+          <View style={[styles.statusDot, item.working ? styles.liveDot : styles.offDot]} />
+          <Text style={[styles.statusText, item.working ? styles.statusTextOn : styles.statusTextOff]}>
+            {item.working ? t("onDuty") : t("offDuty")}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.shiftRow}>
+        {item.working && item.latest ? (
+          <>
+            <View style={styles.shiftChip}>
+              <Ionicons name="time-outline" size={14} color={colors.primary} />
+              <Text style={styles.shiftText}>
+                {t("sinceTime", { time: clockTime(item.latest) || formatRelativeTime(item.latest.createdAt) })}
+              </Text>
+            </View>
+            <Text style={styles.duration}>{shiftLength(item.latest, now, t)}</Text>
+          </>
+        ) : item.latest ? (
+          <>
+            <View style={styles.shiftChip}>
+              <Ionicons name="exit-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.shiftTextMuted}>
+                {t("lastStamp")} · {clockTime(item.latest) || formatRelativeTime(item.latest.createdAt)}
+              </Text>
+            </View>
+            <Text style={styles.durationMuted}>{t("clockedOut")}</Text>
+          </>
+        ) : (
+          <Text style={styles.shiftTextMuted}>{t("noClockYet")}</Text>
+        )}
+      </View>
+    </View>
+  );
 
   return (
     <ScreenBackdrop>
       <FlatList
-        data={activity}
-        keyExtractor={(item, index) => item.id || `log-${index}`}
+        data={roster}
+        keyExtractor={(item) => item.id}
         initialNumToRender={10}
         maxToRenderPerBatch={8}
         windowSize={6}
@@ -107,99 +216,47 @@ const DutyBoardScreen = () => {
             <PageHeader kicker={t("liveRoster")} title={t("dutyBoard")} />
             <LinearGradient colors={colors.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
               <View style={styles.heroTop}>
-                <Text style={styles.kicker}>{t("liveRoster")}</Text>
-                <View style={[styles.pill, onDuty.length ? styles.pillOn : styles.pillOff]}>
-                  <View style={[styles.dot, onDuty.length ? styles.dotLive : null]} />
-                  <Text style={styles.pillText}>{onDuty.length ? t("onWatch") : t("rosterClear")}</Text>
+                <Text style={styles.kicker}>{t("securityRoster")}</Text>
+                <View style={[styles.pill, onDutyCount ? styles.pillOn : styles.pillOff]}>
+                  <View style={[styles.dot, onDutyCount ? styles.dotLive : null]} />
+                  <Text style={styles.pillText}>{onDutyCount ? t("onWatch") : t("rosterClear")}</Text>
                 </View>
               </View>
-              <Text style={styles.heroTitle}>{onDuty.length ? t("staffOnDuty", { n: onDuty.length }) : t("noOneOnDuty")}</Text>
+              <Text style={styles.heroTitle}>
+                {onDutyCount ? t("staffOnDuty", { n: onDutyCount }) : t("noOneOnDuty")}
+              </Text>
               <Text style={styles.heroSub}>
-                {onDuty.length
-                  ? sites.join(" · ")
-                  : lastStamp
-                    ? `${t("lastStamp")} · ${formatRelativeTime(lastStamp.createdAt)}`
-                    : t("waitingClockIn")}
+                {onDutyCount ? sites.join(" · ") : t("waitingClockIn")}
               </Text>
               <View style={styles.stats}>
                 <View style={styles.stat}>
-                  <Text style={styles.statValue}>{onDuty.length}</Text>
-                  <Text style={styles.statLabel}>{t("onSite")}</Text>
+                  <Text style={styles.statValue}>{onDutyCount}</Text>
+                  <Text style={styles.statLabel}>{t("onDuty")}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{offDutyCount}</Text>
+                  <Text style={styles.statLabel}>{t("offDuty")}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.stat}>
                   <Text style={styles.statValue}>{todayIns}</Text>
                   <Text style={styles.statLabel}>{t("inToday")}</Text>
                 </View>
-                <View style={styles.statDivider} />
-                <View style={styles.stat}>
-                  <Text style={styles.statValue}>{activity.length}</Text>
-                  <Text style={styles.statLabel}>{t("stamps")}</Text>
-                </View>
               </View>
             </LinearGradient>
 
-            <Text style={styles.section}>{t("onWatchSection")}</Text>
-            {onDuty.length ? (
-              onDuty.map((item) => (
-                <View key={item.guardId || item.id} style={styles.card}>
-                  <View style={styles.cardTop}>
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{initial(item.guardName)}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.title}>{item.guardName || t("securityWord")}</Text>
-                      <View style={styles.metaRow}>
-                        <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.meta}>{item.site || "APTNexus"}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.liveTag}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.liveText}>{t("live")}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.shiftRow}>
-                    <View style={styles.shiftChip}>
-                      <Ionicons name="time-outline" size={14} color={colors.primary} />
-                      <Text style={styles.shiftText}>{t("sinceTime", { time: clockTime(item) || formatRelativeTime(item.createdAt) })}</Text>
-                    </View>
-                    <Text style={styles.duration}>{shiftLength(item, now, t)}</Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyCard}>
-                <Ionicons name="shield-outline" size={22} color={colors.primary} />
-                <Text style={styles.emptyTitle}>{t("nobodyClockedIn")}</Text>
-                <Text style={styles.emptyCopy}>{t("nobodyClockedInHint")}</Text>
-              </View>
-            )}
-
-            <Text style={styles.section}>{t("recentActivity")}</Text>
-            {!activity.length ? (
-              <Text style={styles.emptyCopy}>{t("activityHint")}</Text>
-            ) : null}
+            <Text style={styles.section}>{t("securityStatusSection")}</Text>
           </View>
         }
-        renderItem={({ item }) => {
-          const inShift = isClockIn(item);
-          return (
-            <View style={styles.logRow}>
-              <View style={[styles.logIcon, inShift ? styles.logIn : styles.logOut]}>
-                <Ionicons name={inShift ? "enter-outline" : "exit-outline"} size={16} color={inShift ? colors.primary : colors.danger} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.logTitle}>{item.guardName || t("securityWord")}</Text>
-                <Text style={styles.logMeta}>
-                  {inShift ? t("clockedIn") : t("clockedOut")}
-                  {item.site ? ` · ${item.site}` : ""}
-                </Text>
-              </View>
-              <Text style={styles.logTime}>{clockTime(item) || formatRelativeTime(item.createdAt)}</Text>
-            </View>
-          );
-        }}
+        renderItem={renderCard}
+        ListEmptyComponent={
+          <View style={styles.emptyCard}>
+            <Ionicons name="shield-outline" size={22} color={colors.primary} />
+            <Text style={styles.emptyTitle}>{t("noSecurityStaff")}</Text>
+            <Text style={styles.emptyCopy}>{t("noSecurityRosterHint")}</Text>
+          </View>
+        }
       />
     </ScreenBackdrop>
   );
@@ -271,30 +328,35 @@ const makeStyles = (colors, shadows) =>
       borderColor: colors.border,
       ...shadows.card,
     },
+    cardOn: { borderColor: "rgba(47, 158, 68, 0.35)" },
+    cardOff: {},
     cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
     avatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
+      width: 48,
+      height: 48,
+      borderRadius: 16,
       backgroundColor: colors.muted,
-      alignItems: "center",
-      justifyContent: "center",
     },
-    avatarText: { color: colors.primary, fontWeight: "800", fontSize: 18 },
     title: { fontWeight: "800", color: colors.text, fontSize: 16 },
+    username: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
     metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
-    meta: { color: colors.textSecondary, fontSize: 13 },
-    liveTag: {
+    meta: { color: colors.textSecondary, fontSize: 13, flex: 1 },
+    statusTag: {
       flexDirection: "row",
       alignItems: "center",
       gap: 5,
-      backgroundColor: "rgba(47, 158, 68, 0.12)",
       borderRadius: 999,
       paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingVertical: 5,
     },
-    liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#2F9E44" },
-    liveText: { color: "#2F9E44", fontSize: 11, fontWeight: "800" },
+    statusOn: { backgroundColor: "rgba(47, 158, 68, 0.12)" },
+    statusOff: { backgroundColor: colors.muted },
+    statusDot: { width: 6, height: 6, borderRadius: 3 },
+    liveDot: { backgroundColor: "#2F9E44" },
+    offDot: { backgroundColor: colors.textSecondary },
+    statusText: { fontSize: 11, fontWeight: "800" },
+    statusTextOn: { color: "#2F9E44" },
+    statusTextOff: { color: colors.textSecondary },
     shiftRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -304,9 +366,11 @@ const makeStyles = (colors, shadows) =>
       borderTopWidth: 1,
       borderTopColor: colors.border,
     },
-    shiftChip: { flexDirection: "row", alignItems: "center", gap: 6 },
+    shiftChip: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, paddingRight: 8 },
     shiftText: { color: colors.text, fontWeight: "600", fontSize: 13 },
+    shiftTextMuted: { color: colors.textSecondary, fontWeight: "600", fontSize: 13 },
     duration: { color: colors.primary, fontWeight: "800", fontSize: 13 },
+    durationMuted: { color: colors.textSecondary, fontWeight: "700", fontSize: 12 },
     emptyCard: {
       backgroundColor: colors.surface,
       borderRadius: 18,
@@ -317,28 +381,5 @@ const makeStyles = (colors, shadows) =>
       borderColor: colors.border,
     },
     emptyTitle: { fontWeight: "800", color: colors.text, marginTop: 8 },
-    emptyCopy: { color: colors.textSecondary, textAlign: "center", marginTop: 4, lineHeight: 19, fontSize: 13, marginBottom: 12 },
-    logRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 12,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    logIcon: {
-      width: 36,
-      height: 36,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    logIn: { backgroundColor: colors.muted },
-    logOut: { backgroundColor: "rgba(180, 35, 24, 0.08)" },
-    logTitle: { fontWeight: "800", color: colors.text, fontSize: 14 },
-    logMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-    logTime: { color: colors.textSecondary, fontWeight: "700", fontSize: 12 },
+    emptyCopy: { color: colors.textSecondary, textAlign: "center", marginTop: 4, lineHeight: 19, fontSize: 13 },
   });

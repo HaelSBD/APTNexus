@@ -27,6 +27,20 @@ export async function loadOrCreateIdentity(userId) {
   };
 }
 
+/** Load existing chat keys only — never create new ones (used for reading old sealed messages). */
+export async function loadIdentityIfPresent(userId) {
+  const name = keyName(userId);
+  const secretB64 = await SecureStore.getItemAsync(name);
+  if (!secretB64) return null;
+  const secretKey = decodeBase64(secretB64);
+  const publicKey = nacl.box.keyPair.fromSecretKey(secretKey).publicKey;
+  return {
+    secretKey,
+    publicKey,
+    publicKeyB64: encodeBase64(publicKey),
+  };
+}
+
 export function encryptPlaintext(plaintext, recipients, identity) {
   const list = [];
   const seen = new Set();

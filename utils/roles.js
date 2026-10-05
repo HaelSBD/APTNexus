@@ -1,5 +1,5 @@
 export function normalizeRole(role) {
-  return String(role || "").trim().toLowerCase();
+  return String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
 }
 
 export function isSecurityRole(profile) {

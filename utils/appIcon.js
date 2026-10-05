@@ -1,28 +1,53 @@
 import { Platform } from "react-native";
+import { requireOptionalNativeModule } from "expo-modules-core";
 
 const NATIVE_NAMES = {
+  midnight: Platform.OS === "android" ? "Midnight" : null,
   light: "Light",
   sunset: "Sunset",
 };
 
-export async function applyAppIcon(id) {
-  if (Platform.OS !== "android" && Platform.OS !== "ios") return "saved";
-  let icons;
+function loadNativeModule() {
+  if (Platform.OS !== "android" && Platform.OS !== "ios") return null;
   try {
-    icons = require("expo-alternate-app-icons");
+    // Safe in Expo Go / builds without the native module — does not throw.
+    return requireOptionalNativeModule("ExpoAlternateAppIcons");
   } catch {
-    return "saved";
+    return null;
   }
-  if (!icons?.supportsAlternateIcons || typeof icons.setAlternateAppIcon !== "function") {
-    return "saved";
+}
+
+function nativeNameFor(id) {
+  if (Object.prototype.hasOwnProperty.call(NATIVE_NAMES, id)) return NATIVE_NAMES[id];
+  return Platform.OS === "android" ? "Midnight" : null;
+}
+
+function sameIcon(current, wanted) {
+  const normalize = (name) => {
+    if (name == null || name === "" || name === "Midnight") {
+      return Platform.OS === "android" ? "Midnight" : null;
+    }
+    return name;
+  };
+  return normalize(current) === normalize(wanted);
+}
+
+/**
+ * @returns {"applied" | "unsupported" | "failed"}
+ */
+export async function applyAppIcon(id) {
+  const native = loadNativeModule();
+  if (!native || typeof native.setAlternateAppIcon !== "function") {
+    return "unsupported";
   }
-  const wanted = NATIVE_NAMES[id] || null;
+
+  const wanted = nativeNameFor(id);
   try {
-    const current = typeof icons.getAppIconName === "function" ? icons.getAppIconName() : null;
-    if ((current || null) === wanted) return "applied";
-    await icons.setAlternateAppIcon(wanted);
+    const current = typeof native.getAppIconName === "function" ? native.getAppIconName() : null;
+    if (sameIcon(current, wanted)) return "applied";
+    await native.setAlternateAppIcon(wanted);
     return "applied";
   } catch {
-    return "saved";
+    return "failed";
   }
 }

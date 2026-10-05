@@ -26,7 +26,6 @@ import { translateRole, useT } from "../utils/i18n";
 
 const FILTERS = [
   { key: "all", labelKey: "filterAll" },
-  { key: "superadmin", labelKey: "roleSuper" },
   { key: "security", labelKey: "roleSecurity" },
   { key: "admin", labelKey: "roleAdmin" },
   { key: "disabled", labelKey: "disabled" },
@@ -66,16 +65,13 @@ const TeamScreen = () => {
   );
 
   const superViewer = isSuperAdmin(me);
-  const filters = useMemo(
-    () => (superViewer ? FILTERS : FILTERS.filter((item) => item.key !== "superadmin")),
-    [superViewer],
-  );
 
   const counts = useMemo(() => {
-    const active = users.filter((row) => row.active !== false);
+    // Super Admins are never counted or shown on Team.
+    const visible = users.filter((row) => !isSuperAdmin(row));
+    const active = visible.filter((row) => row.active !== false);
     return {
-      total: users.length,
-      super: active.filter(isSuperAdmin).length,
+      total: visible.length,
       security: active.filter(isSecurityRole).length,
       admin: active.filter((row) => row.role === "admin").length,
     };
@@ -84,28 +80,21 @@ const TeamScreen = () => {
   const data = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = users.filter((row) => {
-      if (isSuperAdmin(row) && String(row.id) !== String(me?.id)) return false;
+      // Super Admins stay hidden from everyone — including other Super Admins.
+      if (isSuperAdmin(row)) return false;
       if (filter === "security" && !isSecurityRole(row)) return false;
       if (filter === "admin" && row.role !== "admin") return false;
-      if (filter === "superadmin" && !isSuperAdmin(row)) return false;
       if (filter === "disabled" && row.active !== false) return false;
       if (filter !== "disabled" && filter !== "all" && row.active === false) return false;
       if (!q) return true;
       return [row.displayName, row.username, row.phone, row.address, row.role, row.email].join(" ").toLowerCase().includes(q);
     });
-    const rank = (row) => {
-      if (isSuperAdmin(row) && String(row.id) === String(me?.id)) return 0;
-      if (isSuperAdmin(row)) return 1;
-      return 2;
-    };
-    return [...rows].sort((a, b) => {
-      const byRank = rank(a) - rank(b);
-      if (byRank) return byRank;
-      return String(a.displayName || a.username || "").localeCompare(String(b.displayName || b.username || ""), undefined, {
+    return [...rows].sort((a, b) =>
+      String(a.displayName || a.username || "").localeCompare(String(b.displayName || b.username || ""), undefined, {
         sensitivity: "base",
-      });
-    });
-  }, [users, query, filter, superViewer, me?.id]);
+      }),
+    );
+  }, [users, query, filter]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -142,18 +131,8 @@ const TeamScreen = () => {
             {item.address ? ` · ${item.address}` : ""}
           </Text>
           <View style={styles.chipRow}>
-            <View
-              style={[
-                styles.chip,
-                isSuperAdmin(item) ? styles.chipSuper : item.role === "admin" ? styles.chipAdmin : styles.chipSecurity,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  isSuperAdmin(item) ? styles.chipTextSuper : item.role === "admin" && styles.chipTextAdmin,
-                ]}
-              >
+            <View style={[styles.chip, item.role === "admin" ? styles.chipAdmin : styles.chipSecurity]}>
+              <Text style={[styles.chipText, item.role === "admin" && styles.chipTextAdmin]}>
                 {translateRole(t, item.role)}
               </Text>
             </View>
@@ -200,9 +179,7 @@ const TeamScreen = () => {
               }
             />
             <Text style={styles.count}>
-              {superViewer && counts.super
-                ? t("teamCountSuper", { total: counts.total, super: counts.super, security: counts.security, admin: counts.admin })
-                : t("teamCountDetail", { total: counts.total, security: counts.security, admin: counts.admin })}
+              {t("teamCountDetail", { total: counts.total, security: counts.security, admin: counts.admin })}
             </Text>
             <View style={styles.search}>
               <Ionicons name="search-outline" size={16} color={colors.placeholder} />
@@ -212,24 +189,22 @@ const TeamScreen = () => {
                 onChangeText={setQuery}
                 placeholder={t("searchTeam")}
                 placeholderTextColor={colors.placeholder}
-                autoCapitalize="none"
               />
-              {query ? (
-                <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
-                  <Ionicons name="close-circle" size={16} color={colors.placeholder} />
-                </TouchableOpacity>
-              ) : null}
             </View>
             <View style={styles.filters}>
-              {filters.map((item) => (
-                <TouchableOpacity
-                  key={item.key}
-                  style={[styles.filter, filter === item.key && styles.filterOn]}
-                  onPress={() => setFilter(item.key)}
-                >
-                  <Text style={[styles.filterText, filter === item.key && styles.filterTextOn]}>{t(item.labelKey)}</Text>
-                </TouchableOpacity>
-              ))}
+              {FILTERS.map((item) => {
+                const on = filter === item.key;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.filter, on && styles.filterOn]}
+                    onPress={() => setFilter(item.key)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.filterText, on && styles.filterTextOn]}>{t(item.labelKey)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         }
@@ -246,8 +221,6 @@ const TeamScreen = () => {
     </ScreenBackdrop>
   );
 };
-
-export default TeamScreen;
 
 const makeStyles = (colors, shadows) =>
   StyleSheet.create({
@@ -326,10 +299,8 @@ const makeStyles = (colors, shadows) =>
     chip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
     chipSecurity: { backgroundColor: colors.muted },
     chipAdmin: { backgroundColor: "rgba(212, 160, 23, 0.16)" },
-    chipSuper: { backgroundColor: colors.primary },
     chipText: { fontSize: 11, fontWeight: "800", color: colors.primary },
     chipTextAdmin: { color: colors.warning },
-    chipTextSuper: { color: "#fff" },
     chipOff: { backgroundColor: "rgba(180, 35, 24, 0.1)", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
     chipOffText: { fontSize: 11, fontWeight: "800", color: colors.danger },
     phone: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
@@ -345,3 +316,5 @@ const makeStyles = (colors, shadows) =>
     emptyTitle: { fontWeight: "800", color: colors.text, marginTop: 8 },
     emptyCopy: { color: colors.textSecondary, textAlign: "center", marginTop: 4, lineHeight: 19, fontSize: 13 },
   });
+
+export default TeamScreen;
