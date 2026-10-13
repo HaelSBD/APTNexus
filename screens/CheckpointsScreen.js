@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   RefreshControl,
   Modal,
   Pressable,
@@ -20,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import QRCode from "react-native-qrcode-svg";
 import PageHeader from "../components/PageHeader";
 import ScreenBackdrop from "../components/ScreenBackdrop";
+import SiteMark from "../components/SiteMark";
 import { toast } from "../components/Toast";
 import { useSettings, useThemedStyles } from "../context/SettingsContext";
 import { useCurrentUser } from "../context/UserContext";
@@ -69,6 +71,7 @@ const CheckpointsScreen = () => {
   const [error, setError] = useState("");
   const [filterSite, setFilterSite] = useState("All");
   const [filterArea, setFilterArea] = useState("All");
+  const [siteOpen, setSiteOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -95,26 +98,68 @@ const CheckpointsScreen = () => {
     setRefreshing(false);
   };
 
+  const siteKey = (site) => String(site?.id || site?._id || "");
+
+  const matchesSiteFilter = useCallback(
+    (row, siteFilter) => {
+      if (!siteFilter || siteFilter === "All") return true;
+      const rowSiteId = String(row?.siteId || "").trim();
+      const rowName = String(row?.siteName || "").trim().toLowerCase();
+      // Unassigned checkpoints stay visible so they can be edited/linked.
+      if (!rowSiteId && !rowName) return true;
+      if (rowSiteId && rowSiteId === String(siteFilter)) return true;
+      const selected = (sites || []).find((site) => siteKey(site) === String(siteFilter));
+      if (!selected) return false;
+      return Boolean(rowName) && rowName === String(selected.name || "").trim().toLowerCase();
+    },
+    [sites],
+  );
+
+  const siteScopedRows = useMemo(
+    () => (rows || []).filter((row) => matchesSiteFilter(row, filterSite)),
+    [rows, filterSite, matchesSiteFilter],
+  );
+
   const visible = useMemo(() => {
-    return (rows || []).filter((row) => {
-      if (filterSite !== "All" && String(row.siteId) !== String(filterSite)) return false;
+    return siteScopedRows.filter((row) => {
       if (filterArea !== "All" && checkpointArea(row) !== filterArea) return false;
       return true;
     });
-  }, [rows, filterSite, filterArea]);
+  }, [siteScopedRows, filterArea]);
 
   const areaCounts = useMemo(() => {
-    const counts = { All: rows.length };
+    const counts = { All: siteScopedRows.length };
     DEFAULT_AREA_KEYS.forEach((key) => {
-      counts[key] = rows.filter((row) => checkpointArea(row) === key).length;
+      counts[key] = siteScopedRows.filter((row) => checkpointArea(row) === key).length;
     });
     return counts;
-  }, [rows]);
+  }, [siteScopedRows]);
 
   const openCreate = () => {
     if (!manage) return;
-    const defaultSite = sites[0]?.id || "";
+    const preferred =
+      (filterSite !== "All" && (sites || []).find((site) => siteKey(site) === String(filterSite))) ||
+      sites[0];
+    const defaultSite = siteKey(preferred);
     setEditor({ ...emptyForm, siteId: defaultSite, area: "A" });
+  };
+
+  const openEdit = (row) => {
+    if (!manage || !row) return;
+    const matched =
+      (sites || []).find((site) => siteKey(site) === String(row.siteId || "")) ||
+      (sites || []).find(
+        (site) => String(site.name || "").trim().toLowerCase() === String(row.siteName || "").trim().toLowerCase(),
+      );
+    setPreview(null);
+    setEditor({
+      id: row.id,
+      name: row.name || "",
+      siteId: siteKey(matched) || String(row.siteId || ""),
+      area: checkpointArea(row) || "A",
+      lat: row.lat != null ? String(row.lat) : "",
+      lng: row.lng != null ? String(row.lng) : "",
+    });
   };
 
   const useLocation = async () => {
@@ -145,15 +190,17 @@ const CheckpointsScreen = () => {
   const save = async () => {
     if (!manage || !editor || busy) return;
     const name = String(editor.name || "").trim();
-    const siteId = String(editor.siteId || "").trim();
+    const selectedSite = (sites || []).find((site) => siteKey(site) === String(editor.siteId || ""));
+    const siteId = siteKey(selectedSite) || String(editor.siteId || "").trim();
     const area = String(editor.area || "").trim().toUpperCase();
     const lat = Number(editor.lat);
     const lng = Number(editor.lng);
+    const editing = Boolean(editor.id);
     if (name.length < 2) {
       toast.error(t("checkpointNameRequired"));
       return;
     }
-    if (!siteId) {
+    if (!siteId || !selectedSite) {
       toast.error(t("checkpointSiteRequired"));
       return;
     }
@@ -167,11 +214,21 @@ const CheckpointsScreen = () => {
     }
     setBusy(true);
     try {
-      const created = await api.createCheckpoint({ name, siteId, area, lat, lng });
+      const payload = {
+        name,
+        siteId,
+        siteName: selectedSite.name,
+        area,
+        lat,
+        lng,
+      };
+      const result = editing
+        ? await api.updateCheckpoint(editor.id, payload)
+        : await api.createCheckpoint(payload);
       setEditor(null);
       await load();
-      toast.success(t("checkpointAdded"));
-      if (created?.row) setPreview(created.row);
+      toast.success(editing ? t("checkpointUpdated") : t("checkpointAdded"));
+      if (result?.row) setPreview(result.row);
     } catch (err) {
       toast.error(err?.message || t("saveCheckpointFailed"));
     } finally {
@@ -256,7 +313,8 @@ const CheckpointsScreen = () => {
     }
   };
 
-  const siteName = (id) => sites.find((s) => String(s.id) === String(id))?.name || "";
+  const siteName = (id) => sites.find((s) => siteKey(s) === String(id))?.name || "";
+  const selectedSiteName = filterSite !== "All" ? siteName(filterSite) : "";
   const hasGps = (row) => row?.lat != null && row?.lng != null;
 
   return (
@@ -284,28 +342,34 @@ const CheckpointsScreen = () => {
         />
 
         <View style={styles.filterCard}>
-          <Text style={styles.filterLabel}>{t("site")}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          <Text style={styles.filterLabel}>{t("sitesFilterLabel")}</Text>
+          <View style={styles.siteFilters}>
             <TouchableOpacity
-              style={[styles.chip, filterSite === "All" && styles.chipOn]}
+              style={[styles.siteChip, filterSite === "All" && styles.chipOn]}
               onPress={() => setFilterSite("All")}
+              activeOpacity={0.88}
             >
-              <Text style={[styles.chipText, filterSite === "All" && styles.chipTextOn]}>{t("allSites")}</Text>
+              <Text style={[styles.chipText, filterSite === "All" && styles.chipTextOn]} numberOfLines={1}>
+                {t("allSites")}
+              </Text>
             </TouchableOpacity>
-            {sites.map((site) => (
-              <TouchableOpacity
-                key={site.id}
-                style={[styles.chip, filterSite === site.id && styles.chipOn]}
-                onPress={() => setFilterSite(site.id)}
-              >
-                <Text style={[styles.chipText, filterSite === site.id && styles.chipTextOn]} numberOfLines={1}>
-                  {site.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+            <TouchableOpacity
+              style={[styles.siteChip, styles.siteSelectChip, filterSite !== "All" && styles.chipOn]}
+              onPress={() => setSiteOpen(true)}
+              activeOpacity={0.88}
+            >
+              <Text style={[styles.chipText, filterSite !== "All" && styles.chipTextOn]} numberOfLines={1}>
+                {selectedSiteName || t("selectSites")}
+              </Text>
+              <Ionicons
+                name="chevron-down"
+                size={13}
+                color={filterSite !== "All" ? "#fff" : colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
 
-          <Text style={[styles.filterLabel, { marginTop: 12 }]}>{t("areaWord")}</Text>
+          <Text style={[styles.filterLabel, { marginTop: 12 }]}>{t("areasFilterLabel")}</Text>
           <View style={styles.areaFilters}>
             <TouchableOpacity
               style={[styles.areaChip, filterArea === "All" && styles.areaChipOn]}
@@ -385,6 +449,12 @@ const CheckpointsScreen = () => {
                   <Text style={styles.actionText}>{t("download")}</Text>
                 </TouchableOpacity>
                 {manage ? (
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(row)}>
+                    <Ionicons name="create-outline" size={15} color={colors.primary} />
+                    <Text style={styles.actionText}>{t("edit")}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {manage ? (
                   <TouchableOpacity style={styles.actionBtn} onPress={() => remove(row)}>
                     <Ionicons name="trash-outline" size={15} color={colors.danger} />
                     <Text style={[styles.actionText, { color: colors.danger }]}>{t("remove")}</Text>
@@ -417,8 +487,8 @@ const CheckpointsScreen = () => {
           <View style={[styles.sheet, { marginTop: insets.top + 36, marginBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.sheetHandle} />
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={styles.sheetKicker}>{t("newCheckpoint")}</Text>
-              <Text style={styles.sheetTitle}>{t("addCheckpoint")}</Text>
+              <Text style={styles.sheetKicker}>{editor?.id ? t("editCheckpoint") : t("newCheckpoint")}</Text>
+              <Text style={styles.sheetTitle}>{editor?.id ? t("editCheckpoint") : t("addCheckpoint")}</Text>
 
               <Text style={styles.label}>{t("name")}</Text>
               <TextInput
@@ -432,12 +502,13 @@ const CheckpointsScreen = () => {
               <Text style={styles.label}>{t("site")}</Text>
               <View style={styles.optionGrid}>
                 {sites.map((site) => {
-                  const on = String(editor?.siteId) === String(site.id);
+                  const id = siteKey(site);
+                  const on = String(editor?.siteId) === id;
                   return (
                     <TouchableOpacity
-                      key={site.id}
+                      key={id || site.name}
                       style={[styles.optionChip, on && styles.optionChipOn]}
-                      onPress={() => setEditor((current) => ({ ...current, siteId: site.id, area: current?.area || "A" }))}
+                      onPress={() => setEditor((current) => ({ ...current, siteId: id, area: current?.area || "A" }))}
                     >
                       <Text style={[styles.optionChipText, on && styles.optionChipTextOn]} numberOfLines={1}>
                         {site.name}
@@ -495,7 +566,11 @@ const CheckpointsScreen = () => {
                   <Text style={styles.ghostText}>{t("cancel")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.primary} onPress={save} disabled={busy} activeOpacity={0.88}>
-                  {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{t("addCheckpoint")}</Text>}
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryText}>{editor?.id ? t("save") : t("addCheckpoint")}</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -538,11 +613,77 @@ const CheckpointsScreen = () => {
                   <TouchableOpacity style={styles.ghost} onPress={() => setPreview(null)}>
                     <Text style={styles.ghostText}>{t("close")}</Text>
                   </TouchableOpacity>
+                  {manage ? (
+                    <TouchableOpacity style={styles.ghost} onPress={() => openEdit(preview)} activeOpacity={0.88}>
+                      <Text style={styles.ghostText}>{t("edit")}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   <TouchableOpacity style={styles.primary} onPress={() => downloadOne(preview)} activeOpacity={0.88}>
                     <Text style={styles.primaryText}>{t("download")}</Text>
                   </TouchableOpacity>
                 </View>
               </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={siteOpen} transparent animationType="fade" onRequestClose={() => setSiteOpen(false)}>
+        <View style={styles.pickerOverlay}>
+          <Pressable style={styles.overlayDismiss} onPress={() => setSiteOpen(false)} />
+          <View style={[styles.siteSheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.siteSheetKicker}>{t("sitesFilterLabel")}</Text>
+            <Text style={styles.siteSheetTitle}>{t("selectSites")}</Text>
+            <FlatList
+              data={sites}
+              keyExtractor={(site) => siteKey(site) || site.name}
+              style={styles.siteList}
+              contentContainerStyle={styles.siteListContent}
+              showsVerticalScrollIndicator={false}
+              initialNumToRender={8}
+              windowSize={5}
+              removeClippedSubviews
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item: site }) => {
+                const id = siteKey(site);
+                const on = String(filterSite) === id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.siteOption, on && styles.siteOptionOn]}
+                    onPress={() => {
+                      setFilterSite(id);
+                      setSiteOpen(false);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <SiteMark name={site.name} photoURL={site.photoURL} size={36} radius={10} colors={colors} />
+                    <View style={styles.siteOptionCopy}>
+                      <Text style={[styles.siteOptionText, on && styles.siteOptionTextOn]} numberOfLines={1}>
+                        {site.name}
+                      </Text>
+                      {site.address ? (
+                        <Text style={[styles.siteOptionMeta, on && styles.siteOptionMetaOn]} numberOfLines={1}>
+                          {site.address}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {on ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+            {filterSite !== "All" ? (
+              <TouchableOpacity
+                style={styles.siteClear}
+                onPress={() => {
+                  setFilterSite("All");
+                  setSiteOpen(false);
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.siteClearText}>{t("allSites")}</Text>
+              </TouchableOpacity>
             ) : null}
           </View>
         </View>
@@ -592,19 +733,91 @@ const makeStyles = (colors, shadows) =>
       textTransform: "uppercase",
       marginBottom: 8,
     },
-    filters: { gap: 8, paddingRight: 4 },
-    chip: {
+    siteFilters: { flexDirection: "row", flexWrap: "nowrap", gap: 8 },
+    siteChip: {
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 999,
       backgroundColor: colors.muted,
       borderWidth: 1,
       borderColor: colors.border,
-      maxWidth: 160,
+      flexShrink: 1,
+    },
+    siteSelectChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      flex: 1,
+      minWidth: 0,
     },
     chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-    chipText: { color: colors.textSecondary, fontWeight: "700", fontSize: 12 },
+    chipText: { color: colors.textSecondary, fontWeight: "700", fontSize: 12, flexShrink: 1 },
     chipTextOn: { color: "#fff" },
+    pickerOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "flex-end",
+    },
+    siteSheet: {
+      width: "100%",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 18,
+      paddingTop: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      maxHeight: "58%",
+      overflow: "hidden",
+      ...shadows.card,
+    },
+    siteSheetKicker: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: colors.textSecondary,
+      letterSpacing: 0.5,
+      textTransform: "uppercase",
+      marginBottom: 4,
+    },
+    siteSheetTitle: {
+      fontSize: 20,
+      fontWeight: "800",
+      color: colors.text,
+      marginBottom: 10,
+    },
+    siteList: { maxHeight: 280 },
+    siteListContent: { paddingBottom: 4, flexGrow: 0 },
+    siteOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      gap: 12,
+      borderRadius: 14,
+      marginBottom: 6,
+      backgroundColor: colors.muted,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    siteOptionOn: {
+      borderColor: colors.primary,
+    },
+    siteOptionCopy: { flex: 1, minWidth: 0 },
+    siteOptionText: { fontSize: 15, fontWeight: "700", color: colors.text },
+    siteOptionTextOn: { color: colors.primary },
+    siteOptionMeta: { marginTop: 2, fontSize: 12, fontWeight: "600", color: colors.textSecondary },
+    siteOptionMetaOn: { color: colors.primary, opacity: 0.75 },
+    siteClear: {
+      marginTop: 6,
+      marginBottom: 2,
+      paddingVertical: 12,
+      alignItems: "center",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.muted,
+    },
+    siteClearText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
     areaFilters: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     areaChip: {
       paddingHorizontal: 12,

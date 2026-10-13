@@ -7,7 +7,6 @@ import {
   FlatList,
   Modal,
   Pressable,
-  TextInput,
   ActivityIndicator,
   Platform,
 } from "react-native";
@@ -21,7 +20,7 @@ import { useSettings, useThemedStyles } from "../context/SettingsContext";
 import ScreenBackdrop from "../components/ScreenBackdrop";
 import { toast } from "../components/Toast";
 import { useT } from "../utils/i18n";
-import { isAdminRole, isSuperAdmin } from "../utils/roles";
+import { isAdminRole } from "../utils/roles";
 import { useCurrentUser } from "../context/UserContext";
 import { buildReportHtml, createAndSharePdf } from "../utils/printPdf";
 import {
@@ -138,7 +137,6 @@ const SecurityPatrolScreen = () => {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const admin = isAdminRole(profile);
-  const superAdmin = isSuperAdmin(profile);
   const [rows, setRows] = useState([]);
   const [fromDate, setFromDate] = useState(() => startOfDay(new Date()));
   const [toDate, setToDate] = useState(() => startOfDay(new Date()));
@@ -149,34 +147,19 @@ const SecurityPatrolScreen = () => {
   const [monthOpen, setMonthOpen] = useState(false);
   const [pickerField, setPickerField] = useState(null);
   const [area, setArea] = useState("All");
-  const [areaKeys, setAreaKeys] = useState(DEFAULT_AREA_KEYS);
-  const [labels, setLabels] = useState(DEFAULT_AREA_LABELS);
-  const [editKey, setEditKey] = useState(null);
-  const [editValue, setEditValue] = useState("");
-  const [savingLabel, setSavingLabel] = useState(false);
+  const [areaOpen, setAreaOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const areaKeys = DEFAULT_AREA_KEYS;
+  const labels = DEFAULT_AREA_LABELS;
 
   const load = useCallback(() => {
-    const tasks = [api.patrols()];
-    if (admin) {
-      tasks.push(
-        api.patrolAreas().catch(() => ({ labels: DEFAULT_AREA_LABELS, keys: DEFAULT_AREA_KEYS })),
-      );
-    }
-    Promise.all(tasks)
-      .then(([patrols, areas]) => {
+    api
+      .patrols()
+      .then((patrols) => {
         setRows(patrols.rows || []);
-        if (areas?.labels) setLabels({ ...DEFAULT_AREA_LABELS, ...areas.labels });
-        if (Array.isArray(areas?.keys) && areas.keys.length) {
-          setAreaKeys(areas.keys);
-          setArea((current) => (current === "All" || areas.keys.includes(current) ? current : "All"));
-        } else if (areas?.labels) {
-          const keys = Object.keys(areas.labels);
-          if (keys.length) setAreaKeys(keys);
-        }
       })
       .catch(() => {});
-  }, [admin]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -294,32 +277,6 @@ const SecurityPatrolScreen = () => {
   const pickerValue =
     pickerField === "from" ? fromDate || toDate || new Date() : toDate || fromDate || new Date();
 
-  const openRename = (key) => {
-    setEditKey(key);
-    setEditValue(areaLabel(key, labels));
-  };
-
-  const saveRename = async () => {
-    if (!editKey) return;
-    const nextLabel = String(editValue || "").trim().slice(0, 40);
-    if (!nextLabel) {
-      toast.error(t("areaNameRequired"));
-      return;
-    }
-    setSavingLabel(true);
-    try {
-      const data = await api.updatePatrolAreas({ [editKey]: nextLabel });
-      setLabels({ ...DEFAULT_AREA_LABELS, ...(data.labels || {}), [editKey]: nextLabel });
-      if (Array.isArray(data?.keys) && data.keys.length) setAreaKeys(data.keys);
-      setEditKey(null);
-      toast.success(t("areaRenamed"));
-    } catch (error) {
-      toast.error(error?.message || t("areaRenameFailed"));
-    } finally {
-      setSavingLabel(false);
-    }
-  };
-
   const downloadPdf = async () => {
     if (!filteredRows.length) {
       toast.info(t("noPatrolScans"));
@@ -400,6 +357,23 @@ const SecurityPatrolScreen = () => {
             <PageHeader
               kicker={t("patrolKicker")}
               title={admin ? t("patrolLogTitle") : t("myPatrolHistory")}
+              right={
+                admin ? (
+                  <TouchableOpacity
+                    style={[styles.printBtn, printing && styles.printBtnDisabled]}
+                    onPress={downloadPdf}
+                    disabled={printing}
+                    activeOpacity={0.88}
+                    accessibilityLabel={t("printPdf")}
+                  >
+                    {printing ? (
+                      <ActivityIndicator color={colors.primary} size="small" />
+                    ) : (
+                      <Ionicons name="print-outline" size={18} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ) : null
+              }
             />
 
             <View style={styles.filterCard}>
@@ -474,60 +448,36 @@ const SecurityPatrolScreen = () => {
             </View>
 
             {admin ? (
-              <View style={styles.filterCard}>
-                <Text style={styles.filterLabel}>{t("filterByArea")}</Text>
-                <View style={styles.chips}>
+              <View style={styles.areaCard}>
+                <Text style={styles.areaLabel}>{t("filterByArea")}</Text>
+                <View style={styles.areaChips}>
                   <TouchableOpacity
-                    style={[styles.chip, area === "All" && styles.chipOn]}
+                    style={[styles.areaChip, area === "All" && styles.chipOn]}
                     onPress={() => setArea("All")}
                     activeOpacity={0.88}
                   >
-                    <Text style={[styles.chipText, area === "All" && styles.chipTextOn]}>
+                    <Text style={[styles.areaChipText, area === "All" && styles.chipTextOn]}>
                       {t("allAreas")} · {areaCounts.All}
                     </Text>
                   </TouchableOpacity>
-                  {areaKeys.map((id) => {
-                    const on = area === id;
-                    return (
-                      <View key={id} style={[styles.chipWrap, on && styles.chipWrapOn]}>
-                        <TouchableOpacity style={styles.chipMain} onPress={() => setArea(id)} activeOpacity={0.88}>
-                          <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                            {areaLabel(id, labels)} · {areaCounts[id] || 0}
-                          </Text>
-                        </TouchableOpacity>
-                        {superAdmin ? (
-                          <TouchableOpacity
-                            style={styles.chipEdit}
-                            onPress={() => openRename(id)}
-                            hitSlop={8}
-                            accessibilityLabel={t("renameArea")}
-                          >
-                            <Ionicons name="pencil" size={13} color={on ? "#fff" : colors.primary} />
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                    );
-                  })}
+                  <TouchableOpacity
+                    style={[styles.areaChip, styles.areaSelectChip, area !== "All" && styles.chipOn]}
+                    onPress={() => setAreaOpen(true)}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={[styles.areaChipText, area !== "All" && styles.chipTextOn]} numberOfLines={1}>
+                      {area !== "All"
+                        ? `${areaLabel(area, labels) || `Area ${area}`} · ${areaCounts[area] || 0}`
+                        : t("selectArea")}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={13}
+                      color={area !== "All" ? "#fff" : colors.textSecondary}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
-            ) : null}
-
-            {admin ? (
-              <TouchableOpacity
-                style={[styles.downloadBtn, printing && styles.downloadBtnDisabled]}
-                onPress={downloadPdf}
-                disabled={printing}
-                activeOpacity={0.88}
-              >
-                {printing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="download-outline" size={18} color="#fff" />
-                    <Text style={styles.downloadBtnText}>{t("downloadPdf")}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
             ) : null}
 
             <View style={styles.listHead}>
@@ -545,32 +495,6 @@ const SecurityPatrolScreen = () => {
           </View>
         }
       />
-
-      <Modal visible={Boolean(editKey)} transparent animationType="fade" onRequestClose={() => setEditKey(null)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setEditKey(null)}>
-          <Pressable style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 16) }]} onPress={() => {}}>
-            <Text style={styles.modalKicker}>{t("renameArea")}</Text>
-            <Text style={styles.modalTitle}>{editKey ? `Area ${editKey}` : ""}</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editValue}
-              onChangeText={setEditValue}
-              placeholder={t("areaNamePlaceholder")}
-              placeholderTextColor={colors.placeholder}
-              autoFocus
-              maxLength={40}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setEditKey(null)} activeOpacity={0.88}>
-                <Text style={styles.modalCancelText}>{t("cancel")}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSave} onPress={saveRename} disabled={savingLabel} activeOpacity={0.88}>
-                {savingLabel ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>{t("save")}</Text>}
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {Platform.OS === "android" && pickerField ? (
         <DateTimePicker
@@ -643,6 +567,51 @@ const SecurityPatrolScreen = () => {
                 activeOpacity={0.88}
               >
                 <Text style={styles.modalCancelText}>{t("clearDate")}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={areaOpen} transparent animationType="fade" onRequestClose={() => setAreaOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setAreaOpen(false)}>
+          <Pressable style={[styles.monthSheet, { paddingBottom: Math.max(insets.bottom, 16) }]} onPress={() => {}}>
+            <Text style={styles.modalKicker}>{t("filterByArea")}</Text>
+            <Text style={styles.modalTitle}>{t("selectArea")}</Text>
+            <FlatList
+              data={areaKeys}
+              keyExtractor={(item) => item}
+              style={styles.monthList}
+              renderItem={({ item: id }) => {
+                const on = area === id;
+                const name = areaLabel(id, labels) || `Area ${id}`;
+                return (
+                  <TouchableOpacity
+                    style={[styles.monthOption, on && styles.monthOptionOn]}
+                    onPress={() => {
+                      setArea(id);
+                      setAreaOpen(false);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={[styles.monthOptionText, on && styles.monthOptionTextOn]}>
+                      {name} · {areaCounts[id] || 0}
+                    </Text>
+                    {on ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+            {area !== "All" ? (
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => {
+                  setArea("All");
+                  setAreaOpen(false);
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.modalCancelText}>{t("allAreas")}</Text>
               </TouchableOpacity>
             ) : null}
           </Pressable>
@@ -746,30 +715,73 @@ const makeStyles = (colors, shadows) =>
     chipEdit: { paddingHorizontal: 10, paddingVertical: 8 },
     chipText: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
     chipTextOn: { color: "#fff" },
+    areaCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginBottom: 10,
+      overflow: "hidden",
+      ...shadows.card,
+    },
+    areaLabel: {
+      fontSize: 10,
+      fontWeight: "700",
+      color: colors.textSecondary,
+      letterSpacing: 0.35,
+      marginBottom: 6,
+      textTransform: "uppercase",
+    },
+    areaChips: { flexDirection: "row", flexWrap: "nowrap", gap: 6 },
+    areaChip: {
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.muted,
+      overflow: "hidden",
+    },
+    areaSelectChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      flexShrink: 1,
+      maxWidth: "58%",
+    },
+    areaChipText: { fontSize: 11, fontWeight: "700", color: colors.textSecondary },
     monthChip: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 140 },
     monthSheet: {
+      width: "100%",
       backgroundColor: colors.surface,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
       paddingHorizontal: 18,
-      paddingTop: 18,
+      paddingTop: 14,
       borderWidth: 1,
       borderColor: colors.border,
-      maxHeight: "70%",
+      maxHeight: "58%",
       overflow: "hidden",
+      ...shadows.card,
     },
-    monthList: { maxHeight: 360 },
+    monthList: { maxHeight: 280 },
     monthOption: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingVertical: 14,
-      paddingHorizontal: 4,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      paddingVertical: 13,
+      paddingHorizontal: 12,
+      gap: 12,
+      borderRadius: 12,
+      marginBottom: 4,
+      backgroundColor: colors.muted,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
-    monthOptionOn: {},
-    monthOptionText: { fontSize: 15, fontWeight: "700", color: colors.text },
+    monthOptionOn: { borderColor: colors.primary },
+    monthOptionText: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: "700", color: colors.text },
     monthOptionTextOn: { color: colors.primary },
     calendarSheet: {
       backgroundColor: colors.surface,
@@ -791,20 +803,18 @@ const makeStyles = (colors, shadows) =>
       backgroundColor: colors.muted,
     },
     iosCalendar: { alignSelf: "center" },
-    downloadBtn: {
-      flexDirection: "row",
+    printBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.muted,
       alignItems: "center",
       justifyContent: "center",
-      gap: 8,
-      borderRadius: 14,
-      paddingVertical: 13,
-      marginBottom: 16,
-      backgroundColor: colors.primary,
       overflow: "hidden",
-      ...shadows.card,
     },
-    downloadBtnDisabled: { opacity: 0.65 },
-    downloadBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+    printBtnDisabled: { opacity: 0.6 },
     listHead: {
       flexDirection: "row",
       alignItems: "center",
@@ -855,16 +865,6 @@ const makeStyles = (colors, shadows) =>
     },
     emptyTitle: { color: colors.textSecondary, textAlign: "center", fontSize: 14, lineHeight: 20, fontWeight: "600" },
     modalOverlay: { flex: 1, backgroundColor: "rgba(8, 18, 32, 0.48)", justifyContent: "flex-end" },
-    modalSheet: {
-      backgroundColor: colors.surface,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      paddingHorizontal: 18,
-      paddingTop: 18,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
-    },
     modalKicker: {
       fontSize: 11,
       fontWeight: "700",
@@ -874,17 +874,6 @@ const makeStyles = (colors, shadows) =>
       marginBottom: 4,
     },
     modalTitle: { fontSize: 18, fontWeight: "800", color: colors.text, marginBottom: 12 },
-    modalInput: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      color: colors.text,
-      backgroundColor: colors.muted,
-      fontSize: 15,
-    },
-    modalActions: { flexDirection: "row", gap: 10, marginTop: 14 },
     modalCancel: {
       flex: 1,
       borderRadius: 12,
@@ -895,12 +884,4 @@ const makeStyles = (colors, shadows) =>
       marginTop: 12,
     },
     modalCancelText: { fontWeight: "700", color: colors.textSecondary },
-    modalSave: {
-      flex: 1,
-      borderRadius: 12,
-      backgroundColor: colors.primary,
-      paddingVertical: 12,
-      alignItems: "center",
-    },
-    modalSaveText: { fontWeight: "700", color: "#fff" },
   });

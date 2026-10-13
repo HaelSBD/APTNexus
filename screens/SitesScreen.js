@@ -56,7 +56,7 @@ const SitesScreen = () => {
       setRows([]);
       setError(err?.message || t("loadSitesFailed"));
     }
-  }, []);
+  }, [t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -125,13 +125,16 @@ const SitesScreen = () => {
         address: String(editor.address || "").trim(),
         active: editor.active !== false,
         isDefault: Boolean(editor.isDefault),
+        areas: fixedSiteAreas(),
       };
       const file = editor.photoFile || null;
-      if (editor.id) await api.updateSite(editor.id, payload, file);
+      const editing = Boolean(editor.id);
+      if (editing) await api.updateSite(editor.id, payload, file);
       else await api.createSite(payload, file);
+      // Area A checkpoint is created by the Admin API on site create.
       setEditor(null);
       await load();
-      toast.success(editor.id ? t("siteUpdated") : t("siteAdded"));
+      toast.success(editing ? t("siteUpdated") : t("siteAdded"));
     } catch (error) {
       toast.error(error?.message || t("saveSiteFailed"));
     } finally {
@@ -334,18 +337,6 @@ const SitesScreen = () => {
                 placeholderTextColor={colors.placeholder}
               />
 
-              <View style={styles.areasBlock}>
-                <Text style={styles.label}>{t("areasWord")}</Text>
-                <Text style={styles.areasHint}>{t("siteAreasHint")}</Text>
-                <View style={styles.areaChips}>
-                  {fixedSiteAreas().map((area) => (
-                    <View key={area.key} style={styles.areaChip}>
-                      <Text style={styles.areaChipText}>{area.key}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
               <View style={styles.sheetActions}>
                 <TouchableOpacity style={styles.ghost} onPress={() => setEditor(null)}>
                   <Text style={styles.ghostText}>{t("cancel")}</Text>
@@ -486,21 +477,6 @@ const makeStyles = (colors, shadows) =>
     sheetTitle: { marginTop: 4, marginBottom: 14, fontSize: 20, fontWeight: "800", color: colors.text, textAlign: "center" },
     label: { fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 },
     input: { backgroundColor: colors.muted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text, marginBottom: 12 },
-    areasBlock: { marginTop: 8, marginBottom: 4 },
-    areasHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: -2, marginBottom: 10 },
-    areaChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
-    areaChip: {
-      minWidth: 44,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 12,
-      backgroundColor: colors.muted,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    areaChipText: { fontSize: 14, fontWeight: "800", color: colors.primary },
     sheetActions: { flexDirection: "row", gap: 10, marginTop: 12 },
     ghost: {
       flex: 1,
