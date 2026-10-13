@@ -300,12 +300,13 @@ const SecurityPatrolScreen = () => {
       const html = buildReportHtml({
         title: admin ? t("patrolReportTitle") : t("myPatrolHistory"),
         meta: `${periodName} · ${areaName} · ${filteredRows.length} ${t("recordsWord")} · ${formatStamp(new Date())}`,
-        headers: ["#", t("checkpointWord"), t("areaWord"), t("scannedOn")],
+        headers: ["#", t("site"), t("checkpointWord"), t("areaWord"), t("scannedOn")],
         rows: filteredRows.map((row, index) => {
           const stamp = formatStamp(row.createdAt || row.at);
           const areaKey = checkpointArea(row);
           const zone = areaKey ? areaLabel(areaKey, labels) : "—";
-          return [index + 1, row.checkpointName || row.label || "", zone, stamp];
+          const site = String(row.siteName || row.site || "").trim() || "—";
+          return [index + 1, site, row.checkpointName || row.label || "", zone, stamp];
         }),
       });
       const result = await createAndSharePdf({
