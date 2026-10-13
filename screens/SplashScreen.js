@@ -1,12 +1,9 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View, Image } from "react-native";
 import * as SplashScreenNative from "expo-splash-screen";
-import { useThemedStyles } from "../context/SettingsContext";
-import ScreenBackdrop from "../components/ScreenBackdrop";
 import { useT } from "../utils/i18n";
 
 const SplashScreen = () => {
-  const styles = useThemedStyles(makeStyles);
   const t = useT();
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -16,22 +13,22 @@ const SplashScreen = () => {
   }, [opacity]);
 
   return (
-    <ScreenBackdrop>
-      <View style={styles.container}>
-        <Animated.View style={{ opacity, alignItems: "center" }}>
-          <Text style={styles.brand}>APTNexus</Text>
-          <Text style={styles.subtitle}>{t("securityWord")}</Text>
-        </Animated.View>
-      </View>
-    </ScreenBackdrop>
+    <View style={styles.root}>
+      <Animated.View style={[styles.center, { opacity }]}>
+        <Image source={require("../assets/splash.png")} style={styles.icon} resizeMode="contain" />
+        <Text style={styles.brand}>APTNexus</Text>
+        <Text style={styles.subtitle}>{t("securityWord")}</Text>
+      </Animated.View>
+    </View>
   );
 };
 
 export default SplashScreen;
 
-const makeStyles = (colors) =>
-  StyleSheet.create({
-    container: { flex: 1, justifyContent: "center", alignItems: "center" },
-    brand: { fontSize: 28, fontWeight: "700", color: colors.text, letterSpacing: 0.4 },
-    subtitle: { marginTop: 8, fontSize: 15, color: colors.textSecondary },
-  });
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#071E40", justifyContent: "center", alignItems: "center" },
+  center: { alignItems: "center", paddingHorizontal: 24 },
+  icon: { width: 96, height: 96, marginBottom: 18 },
+  brand: { fontSize: 28, fontWeight: "700", color: "#F5F8FC", letterSpacing: 0.4 },
+  subtitle: { marginTop: 8, fontSize: 15, color: "rgba(245, 248, 252, 0.72)" },
+});

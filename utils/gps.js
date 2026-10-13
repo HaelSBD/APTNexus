@@ -1,4 +1,5 @@
 import * as Location from "expo-location";
+import { ensureLocationPermission } from "./permissions";
 
 const wait = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
 
@@ -21,16 +22,25 @@ async function readPosition(accuracy, timeoutMs) {
   return toFix(pos);
 }
 
-export async function getGps() {
+/**
+ * One-shot GPS read.
+ * - high: true  → BestForNavigation (clock-in / full-power stamp)
+ * - high: false → Balanced (default for gate/patrol and idle reads)
+ * Location permission is requested only once (when still undetermined).
+ */
+export async function getGps({ high = false } = {}) {
   try {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== "granted") return { lat: null, lng: null, accuracy: null };
+    const permission = await ensureLocationPermission();
+    if (!permission.granted) return { lat: null, lng: null, accuracy: null };
 
     let best = await Location.getLastKnownPositionAsync().catch(() => null);
     best = toFix(best);
 
+    const accuracy = high ? Location.Accuracy.BestForNavigation : Location.Accuracy.Balanced;
+    const timeoutMs = high ? 8000 : 4500;
+
     try {
-      const live = await readPosition(Location.Accuracy.High, 6000);
+      const live = await readPosition(accuracy, timeoutMs);
       if (live && (!best || live.accuracy == null || best.accuracy == null || live.accuracy <= best.accuracy)) {
         best = live;
       }

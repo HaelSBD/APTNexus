@@ -2,7 +2,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { makeShadows, paletteFor } from "../theme";
-import { applyAppIcon } from "../utils/appIcon";
 
 const STORAGE_KEY = "aptnexus:settings";
 
@@ -13,7 +12,6 @@ export const defaultSettings = {
   notificationSound: true,
   notificationVibration: false,
   highAccuracyGps: false,
-  appIcon: "midnight",
 };
 
 let snapshot = { ...defaultSettings };
@@ -49,13 +47,9 @@ export function SettingsProvider({ children }) {
           notificationSound: parsed.notificationSound != null ? Boolean(parsed.notificationSound) : defaultSettings.notificationSound,
           notificationVibration: parsed.notificationVibration != null ? Boolean(parsed.notificationVibration) : defaultSettings.notificationVibration,
           highAccuracyGps: Boolean(parsed.highAccuracyGps),
-          appIcon: parsed.appIcon === "light" || parsed.appIcon === "sunset" ? parsed.appIcon : "midnight",
         };
         snapshot = next;
         setSettings(next);
-        setTimeout(() => {
-          applyAppIcon(next.appIcon).catch(() => {});
-        }, 800);
       })
       .catch(() => {});
     return () => {

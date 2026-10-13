@@ -14,7 +14,6 @@ import {
   Platform,
   ActivityIndicator,
   BackHandler,
-  Image,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,13 +30,6 @@ import { playToggleFeedback } from "../utils/alertFeedback";
 import { askPermission, openAppSettings, readPermissions } from "../utils/permissions";
 import Avatar from "../components/Avatar";
 import { isAdminRole, isSuperAdmin } from "../utils/roles";
-import { applyAppIcon } from "../utils/appIcon";
-
-const APP_ICONS = [
-  { id: "midnight", source: require("../assets/icons/midnight-preview.png") },
-  { id: "light", source: require("../assets/icons/light-preview.png") },
-  { id: "sunset", source: require("../assets/icons/sunset-preview.png") },
-];
 
 const LANGUAGES = [
   { id: "en", short: "EN", label: "English" },
@@ -76,8 +68,6 @@ const SettingsScreen = () => {
   const lang = languageMeta(settings.language);
   const onDuty = Boolean(duty?.clockedIn);
   const appearanceLabel = settings.appearance === "dark" ? t("dark") : settings.appearance === "light" ? t("light") : t("auto");
-  const iconLabel =
-    settings.appIcon === "light" ? t("iconLight") : settings.appIcon === "sunset" ? t("iconSunset") : t("iconMidnight");
 
   const loadPermissions = useCallback(async () => {
     const next = await readPermissions();
@@ -98,6 +88,11 @@ const SettingsScreen = () => {
   useEffect(() => {
     if (page === "app" || page === "gps") loadPermissions();
   }, [page, loadPermissions]);
+
+  useEffect(() => {
+    if (isAdmin && page === "gps") setPage("hub");
+    if (!isAdmin && page === "notifications") setPage("hub");
+  }, [isAdmin, page]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -179,7 +174,6 @@ const SettingsScreen = () => {
 
   const titles = {
     appearance: t("appearance"),
-    icon: t("appIcon"),
     notifications: t("notifications"),
     password: t("changePassword"),
     language: t("language"),
@@ -226,15 +220,17 @@ const SettingsScreen = () => {
 
               <Text style={styles.section}>{t("preferences")}</Text>
               <View style={styles.group}>
-                <LinkRow
-                  styles={styles}
-                  colors={colors}
-                  icon="notifications-outline"
-                  title={t("notifications")}
-                  subtitle={settings.notifications ? t("alertsOn") : t("alertsOff")}
-                  badge={settings.notifications ? t("on") : t("off")}
-                  onPress={() => setPage("notifications")}
-                />
+                {isAdmin ? (
+                  <LinkRow
+                    styles={styles}
+                    colors={colors}
+                    icon="notifications-outline"
+                    title={t("notifications")}
+                    subtitle={settings.notifications ? t("alertsOn") : t("alertsOff")}
+                    badge={settings.notifications ? t("on") : t("off")}
+                    onPress={() => setPage("notifications")}
+                  />
+                ) : null}
                 <LinkRow
                   styles={styles}
                   colors={colors}
@@ -243,15 +239,6 @@ const SettingsScreen = () => {
                   subtitle={appearanceLabel}
                   badge={appearanceLabel}
                   onPress={() => setPage("appearance")}
-                />
-                <LinkRow
-                  styles={styles}
-                  colors={colors}
-                  icon="color-palette-outline"
-                  title={t("appIcon")}
-                  subtitle={t("appIconHint")}
-                  badge={iconLabel}
-                  onPress={() => setPage("icon")}
                 />
                 <LinkRow
                   styles={styles}
@@ -275,15 +262,17 @@ const SettingsScreen = () => {
 
               <Text style={styles.section}>{t("legal")}</Text>
               <View style={styles.group}>
-                <LinkRow
-                  styles={styles}
-                  colors={colors}
-                  icon="location-outline"
-                  title={t("gps")}
-                  subtitle={onDuty ? t("gpsLive") : t("gpsIdle")}
-                  badge={onDuty ? t("trackingOn") : t("trackingOff")}
-                  onPress={() => setPage("gps")}
-                />
+                {!isAdmin ? (
+                  <LinkRow
+                    styles={styles}
+                    colors={colors}
+                    icon="location-outline"
+                    title={t("gps")}
+                    subtitle={onDuty ? t("gpsLive") : t("gpsIdle")}
+                    badge={onDuty ? t("trackingOn") : t("trackingOff")}
+                    onPress={() => setPage("gps")}
+                  />
+                ) : null}
                 <LinkRow
                   styles={styles}
                   colors={colors}
@@ -326,43 +315,6 @@ const SettingsScreen = () => {
                     <View>
                       <Text style={styles.choiceTitle}>{option.label}</Text>
                       <Text style={styles.choiceHint}>{option.hint}</Text>
-                    </View>
-                    {on ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : <View style={styles.choiceOff} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {page === "icon" ? (
-            <View style={styles.group}>
-              {APP_ICONS.map((option, index, list) => {
-                const on = (settings.appIcon || "midnight") === option.id;
-                const label = option.id === "light" ? t("iconLight") : option.id === "sunset" ? t("iconSunset") : t("iconMidnight");
-                const hint = option.id === "light" ? t("iconLightHint") : option.id === "sunset" ? t("iconSunsetHint") : t("iconMidnightHint");
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    style={[styles.choice, index === list.length - 1 && styles.choiceLast]}
-                    onPress={async () => {
-                      setSetting("appIcon", option.id);
-                      const result = await applyAppIcon(option.id);
-                      if (result === "applied") {
-                        toast.success(t("appIconApplied"));
-                      } else if (result === "unsupported") {
-                        toast.error(t("appIconNeedsBuild"));
-                      } else {
-                        toast.error(t("appIconSaved"));
-                      }
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.iconChoice}>
-                      <Image source={option.source} style={styles.iconPreview} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.choiceTitle}>{label}</Text>
-                        <Text style={styles.choiceHint}>{hint}</Text>
-                      </View>
                     </View>
                     {on ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : <View style={styles.choiceOff} />}
                   </TouchableOpacity>
@@ -489,54 +441,65 @@ const SettingsScreen = () => {
                 label={t("photos")}
                 granted={perms.photos.granted}
                 onPress={() => onPermission("photos")}
+                last={isAdmin}
               />
-              <PermissionRow
-                styles={styles}
-                colors={colors}
-                t={t}
-                icon="location-outline"
-                label={t("location")}
-                granted={perms.location.granted}
-                onPress={() => onPermission("location")}
-                last
-              />
+              {!isAdmin ? (
+                <PermissionRow
+                  styles={styles}
+                  colors={colors}
+                  t={t}
+                  icon="location-outline"
+                  label={t("location")}
+                  granted={perms.location.granted}
+                  onPress={() => onPermission("location")}
+                  last
+                />
+              ) : null}
               <TouchableOpacity style={styles.secondary} onPress={openAppSettings}>
                 <Text style={styles.secondaryText}>{t("openPhoneSettings")}</Text>
               </TouchableOpacity>
             </View>
           ) : null}
 
-          {page === "gps" ? (
-            <View style={styles.group}>
-              <View style={[styles.statusPill, onDuty ? styles.statusOn : styles.statusOff]}>
-                <View style={[styles.dot, { backgroundColor: onDuty ? "#2F9E44" : colors.placeholder }]} />
-                <Text style={[styles.statusText, { color: onDuty ? "#2F9E44" : colors.textSecondary }]}>
-                  {onDuty ? t("gpsLive") : t("gpsIdle")}
-                </Text>
+          {page === "gps" && !isAdmin ? (
+            <>
+              <View style={[styles.gpsStatusCard, onDuty ? styles.gpsStatusLive : styles.gpsStatusIdle]}>
+                <View style={[styles.gpsStatusIcon, onDuty ? styles.gpsStatusIconLive : null]}>
+                  <Ionicons name={onDuty ? "navigate" : "navigate-outline"} size={20} color={onDuty ? "#2F9E44" : colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.gpsStatusTitle, { color: onDuty ? "#1F7A33" : colors.text }]}>
+                    {onDuty ? t("trackingOn") : t("trackingOff")}
+                  </Text>
+                  <Text style={styles.gpsStatusSub} numberOfLines={3}>
+                    {onDuty ? t("gpsLive") : t("gpsIdle")}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.bodyText}>{t("gpsBody")}</Text>
-              <PermissionRow
-                styles={styles}
-                colors={colors}
-                t={t}
-                icon="navigate-outline"
-                label={t("gpsPermission")}
-                granted={perms.location.granted}
-                onPress={() => onPermission("location")}
-                last={!isAdmin}
-              />
-              {isAdmin ? (
-                <ToggleRow
-                  styles={styles}
-                  colors={colors}
-                  label={t("highGps")}
-                  hint={t("highGpsHint")}
-                  value={settings.highAccuracyGps}
-                  onValueChange={(value) => setSetting("highAccuracyGps", value)}
-                  last
-                />
-              ) : null}
-            </View>
+
+              <Text style={styles.section}>{t("howItWorks")}</Text>
+              <View style={styles.group}>
+                <Text style={[styles.bodyText, styles.gpsBody]}>{t("gpsBody")}</Text>
+              </View>
+
+              <Text style={styles.section}>{t("location")}</Text>
+              <View style={styles.group}>
+                <View style={styles.toggleRow}>
+                  <View style={[styles.iconWrap, perms.location.granted && styles.iconWrapOk]}>
+                    <Ionicons name="navigate-outline" size={18} color={perms.location.granted ? "#2F9E44" : colors.primary} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.linkTitle}>{t("gpsPermission")}</Text>
+                    <Text style={styles.linkSub}>{perms.location.granted ? t("gpsGranted") : t("gpsDenied")}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[styles.gpsActionBtn, styles.gpsActionBtnLast]} onPress={() => onPermission("location")} activeOpacity={0.88}>
+                  <Text style={styles.gpsActionText} numberOfLines={1}>
+                    {perms.location.granted ? t("openPhoneSettings") : t("gpsEnable")}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
           ) : null}
 
           {page === "privacy" ? (
@@ -615,7 +578,7 @@ const LinkRow = ({ styles, colors, icon, title, subtitle, onPress, danger, last,
 
 const ToggleRow = ({ styles, colors, label, hint, value, onValueChange, last }) => (
   <View style={[styles.toggleRow, last && styles.linkRowLast]}>
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
       <Text style={styles.linkTitle}>{label}</Text>
       {hint ? <Text style={styles.linkSub}>{hint}</Text> : null}
     </View>
@@ -628,12 +591,14 @@ const PermissionRow = ({ styles, colors, t, icon, label, granted, onPress, last 
     <View style={[styles.iconWrap, granted && styles.iconWrapOk]}>
       <Ionicons name={icon} size={18} color={granted ? "#2F9E44" : colors.primary} />
     </View>
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
       <Text style={styles.linkTitle}>{label}</Text>
       <Text style={styles.linkSub}>{granted ? t("allowed") : t("notAllowed")}</Text>
     </View>
     <TouchableOpacity style={styles.permBtn} onPress={onPress}>
-      <Text style={styles.permBtnText}>{granted ? t("openPhoneSettings") : t("askPermission")}</Text>
+      <Text style={styles.permBtnText} numberOfLines={1}>
+        {granted ? t("openPhoneSettings") : t("askPermission")}
+      </Text>
     </TouchableOpacity>
   </View>
 );
@@ -690,8 +655,54 @@ const makeStyles = (colors, shadows) =>
       marginBottom: 18,
       borderWidth: 1,
       borderColor: colors.border,
+      overflow: "hidden",
       ...shadows.card,
     },
+    gpsStatusCard: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 16,
+      borderWidth: 1,
+      overflow: "hidden",
+    },
+    gpsStatusLive: {
+      backgroundColor: "rgba(47, 158, 68, 0.10)",
+      borderColor: "rgba(47, 158, 68, 0.28)",
+    },
+    gpsStatusIdle: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+    },
+    gpsStatusIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.muted,
+      overflow: "hidden",
+    },
+    gpsStatusIconLive: { backgroundColor: "rgba(47, 158, 68, 0.16)" },
+    gpsStatusTitle: { fontSize: 15, fontWeight: "800" },
+    gpsStatusSub: { marginTop: 4, fontSize: 13, lineHeight: 18, color: colors.textSecondary },
+    gpsBody: { paddingHorizontal: 4, paddingVertical: 12, marginBottom: 0 },
+    gpsActionBtn: {
+      marginTop: 4,
+      marginBottom: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.muted,
+      paddingVertical: 11,
+      paddingHorizontal: 12,
+      alignItems: "center",
+      overflow: "hidden",
+    },
+    gpsActionBtnLast: { marginBottom: 12 },
+    gpsActionText: { color: colors.primary, fontWeight: "700", fontSize: 14 },
     linkRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -743,6 +754,7 @@ const makeStyles = (colors, shadows) =>
       paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      overflow: "hidden",
     },
     label: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 6, marginTop: 10 },
     input: { backgroundColor: colors.muted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 16 },
@@ -759,23 +771,17 @@ const makeStyles = (colors, shadows) =>
     saveText: { color: "#fff", fontWeight: "700", fontSize: 16 },
     secondary: { marginBottom: 12, borderRadius: 12, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border },
     secondaryText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
-    permBtn: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.muted },
+    permBtn: {
+      maxWidth: 120,
+      flexShrink: 0,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: colors.muted,
+      overflow: "hidden",
+    },
     permBtnText: { color: colors.primary, fontWeight: "700", fontSize: 12 },
     bodyText: { fontSize: 14, lineHeight: 21, color: colors.textSecondary, paddingVertical: 8 },
-    statusPill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      alignSelf: "flex-start",
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      marginTop: 8,
-    },
-    statusOn: { backgroundColor: "rgba(47, 158, 68, 0.12)" },
-    statusOff: { backgroundColor: colors.muted },
-    dot: { width: 8, height: 8, borderRadius: 4 },
-    statusText: { fontSize: 12, fontWeight: "700" },
     photoBackdrop: {
       flex: 1,
       backgroundColor: colors.overlay,

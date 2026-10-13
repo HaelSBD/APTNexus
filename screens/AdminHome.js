@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,18 +7,17 @@ import { useSettings, useThemedStyles } from "../context/SettingsContext";
 import { api } from "../utils/api";
 import { useT } from "../utils/i18n";
 
-const PINNED = [
-  { titleKey: "deskDuty", hintKey: "deskDutyHint", icon: "shield-outline", route: "Duty", tone: "gate" },
+const DESK_ITEMS = [
+  { titleKey: "deskSettings", hintKey: "deskSettingsHint", icon: "settings-outline", route: "Settings", tone: "gate", stack: true },
   { titleKey: "deskSites", hintKey: "deskSitesHint", icon: "business-outline", route: "Sites", tone: "gate", stack: true },
-  { titleKey: "deskChat", hintKey: "deskChatHint", icon: "chatbubbles-outline", route: "Chat", tone: "scan" },
+  { titleKey: "deskCheckpoints", hintKey: "deskCheckpointsHint", icon: "scan-outline", route: "Checkpoints", tone: "scan", stack: true },
   { titleKey: "deskTeam", hintKey: "deskTeamHint", icon: "people-outline", route: "Team", tone: "gate" },
+  { titleKey: "deskVisitors", hintKey: "deskVisitorsHint", icon: "clipboard-outline", route: "Visitors", tone: "scan" },
+  { titleKey: "deskPatrol", hintKey: "deskPatrolHint", icon: "qr-code-outline", route: "Patrol", tone: "scan" },
 ];
 
-const MORE = [
-  { titleKey: "deskVisitors", hintKey: "deskVisitorsHint", icon: "enter-outline", route: "Visitors", tone: "scan", stack: true },
-  { titleKey: "deskInbox", hintKey: "deskInboxHint", icon: "notifications-outline", route: "Notifications", tone: "scan", stack: true },
-  { titleKey: "deskSettings", hintKey: "deskSettingsHint", icon: "settings-outline", route: "Settings", tone: "gate", stack: true },
-];
+/** When the desk is collapsed, only these quick links stay visible (this order). */
+const COLLAPSED_ROUTES = ["Settings", "Sites", "Checkpoints"];
 
 const ActionRow = ({ item, last, onPress, styles, colors, t }) => (
   <TouchableOpacity style={[styles.row, last && styles.rowLast]} onPress={onPress} activeOpacity={0.86}>
@@ -82,6 +81,14 @@ const AdminHomePanel = ({ reloadKey = 0 }) => {
 
   const toggle = () => setOpen((current) => !current);
 
+  const items = useMemo(
+    () =>
+      open
+        ? DESK_ITEMS
+        : COLLAPSED_ROUTES.map((route) => DESK_ITEMS.find((item) => item.route === route)).filter(Boolean),
+    [open],
+  );
+
   return (
     <View style={styles.wrap}>
       <TouchableOpacity onPress={toggle} activeOpacity={0.92}>
@@ -112,22 +119,17 @@ const AdminHomePanel = ({ reloadKey = 0 }) => {
       </TouchableOpacity>
 
       <View style={styles.body}>
-        {PINNED.map((item) => (
-          <ActionRow key={item.route} item={item} onPress={() => openScreen(item)} styles={styles} colors={colors} t={t} />
+        {items.map((item, index) => (
+          <ActionRow
+            key={item.route}
+            item={item}
+            last={index === items.length - 1}
+            onPress={() => openScreen(item)}
+            styles={styles}
+            colors={colors}
+            t={t}
+          />
         ))}
-        {open
-          ? MORE.map((item, index) => (
-              <ActionRow
-                key={item.route}
-                item={item}
-                last={index === MORE.length - 1}
-                onPress={() => openScreen(item)}
-                styles={styles}
-                colors={colors}
-                t={t}
-              />
-            ))
-          : null}
       </View>
     </View>
   );
@@ -188,7 +190,6 @@ const makeStyles = (colors, shadows) =>
     dotLive: { backgroundColor: colors.live },
     heroTitle: { color: "#fff", fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
     heroSub: { color: "rgba(255,255,255,0.72)", marginTop: 4, fontSize: 13 },
-    collapse: { overflow: "hidden" },
     body: { padding: 14 },
     row: {
       flexDirection: "row",

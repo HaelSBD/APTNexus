@@ -17,8 +17,14 @@ const InboxContext = createContext({
   refresh: async () => {},
   markRead: async () => {},
   markAllRead: async () => {},
+  clearAll: async () => {},
   remove: async () => {},
 });
+
+const DROP_KINDS = new Set(["chat", "update"]);
+const DROP_ENTITIES = new Set(["announcement", "chat", "chat_group", "chat_message"]);
+const SECURITY_KINDS = new Set(["gate", "patrol"]);
+const ADMIN_KINDS = new Set(["gate", "patrol", "duty", "support", "team"]);
 
 const iconFor = (kind) =>
   ({
@@ -27,20 +33,48 @@ const iconFor = (kind) =>
     duty: "shield-outline",
     support: "chatbubble-ellipses-outline",
     team: "people-outline",
-    chat: "chatbubbles-outline",
-    update: "megaphone-outline",
   }[kind] || "notifications-outline");
 
-function mapServerRow(row, lang) {
+function keepInboxRow(row, { uid, admin } = {}) {
+  if (DROP_KINDS.has(row?.kind)) return false;
+  if (DROP_ENTITIES.has(row?.entity)) return false;
+  const action = String(row?.action || row?.meta?.action || "");
+  if (action.startsWith("chat.")) return false;
+  if (admin) return !row?.kind || ADMIN_KINDS.has(row.kind);
+  // Security: only own gate/patrol activity — never other officers' noise.
+  if (!SECURITY_KINDS.has(row?.kind)) return false;
+  const mine = String(row?.actorId || row?.guardId || "") === String(uid || "");
+  const addressedToMe = String(row?.receiverId || "") === String(uid || "");
+  return mine || addressedToMe;
+}
+
+function mapServerRow(row, lang, uid) {
+  const mine = String(row.actorId || "") === String(uid || "");
+  let title = row.title || t(lang, "updateWord");
+  let body = row.message || row.meta?.message || "";
+  if (mine && row.kind === "gate") {
+    title = t(lang, "youRegisteredVisitorTitle");
+    body = t(lang, "youRegisteredVisitor", {
+      name: row.meta?.visitorName || t(lang, "visitorWord"),
+      unit: row.meta?.unit || "—",
+    });
+  } else if (mine && row.kind === "patrol") {
+    title = t(lang, "youScannedCheckpointTitle");
+    body = t(lang, "youScannedCheckpoint", {
+      checkpoint: row.meta?.checkpointName || t(lang, "aCheckpoint"),
+    });
+  }
   return {
     id: String(row.id),
     kind: row.kind || "ops",
     icon: iconFor(row.kind),
-    title: row.title || t(lang, "updateWord"),
-    meta: [row.actorName, row.meta?.title, row.meta?.channel, row.meta?.unit, row.meta?.site, row.meta?.plateNumber, row.meta?.checkpointName]
-      .filter(Boolean)
-      .join(" · "),
-    body: row.message || row.meta?.message || "",
+    title,
+    meta: mine
+      ? [row.meta?.unit, row.meta?.plateNumber, row.meta?.checkpointName].filter(Boolean).join(" · ")
+      : [row.actorName, row.meta?.title, row.meta?.unit, row.meta?.site, row.meta?.plateNumber, row.meta?.checkpointName]
+          .filter(Boolean)
+          .join(" · "),
+    body,
     at: row.createdAt,
     read: Boolean(row.read),
     entity: row.entity,
@@ -65,49 +99,64 @@ async function saveReadSet(set) {
   await AsyncStorage.setItem(READ_KEY, JSON.stringify(ids)).catch(() => {});
 }
 
-async function synthesize(readSet, admin = false, lang = "en") {
-  const [visitors, patrols, duty, trails, notices] = await Promise.allSettled([
+async function synthesize(readSet, { admin = false, lang = "en", uid = "" } = {}) {
+  const [visitors, patrols, duty, trails] = await Promise.allSettled([
     api.visitors(),
     api.patrols(),
-    api.dutyLogs(),
-    api.trails(),
-    api.announcements(),
+    admin ? api.dutyLogs() : Promise.resolve({ rows: [] }),
+    admin ? api.trails() : Promise.resolve({ rows: [] }),
   ]);
-  const visitorRows = visitors.status === "fulfilled" ? visitors.value.rows || [] : [];
-  const patrolRows = patrols.status === "fulfilled" ? patrols.value.rows || [] : [];
+  const mine = (guardId) => String(guardId || "") === String(uid || "");
+  let visitorRows = visitors.status === "fulfilled" ? visitors.value.rows || [] : [];
+  let patrolRows = patrols.status === "fulfilled" ? patrols.value.rows || [] : [];
+  if (!admin) {
+    visitorRows = visitorRows.filter((row) => mine(row.guardId));
+    patrolRows = patrolRows.filter((row) => mine(row.guardId));
+  }
   const dutyRows = duty.status === "fulfilled" ? duty.value.rows || [] : [];
   const trailRows = trails.status === "fulfilled" ? trails.value.rows || [] : [];
-  const noticeRows = notices.status === "fulfilled" ? notices.value.rows || [] : [];
   return [
-    ...visitorRows.map((row) => ({
-      id: `gate-${row.id}`,
-      kind: "gate",
-      icon: iconFor("gate"),
-      title: row.visitorName || t(lang, "visitorWord"),
-      meta: [row.unit, row.plateNumber, row.guardName].filter(Boolean).join(" · "),
-      body: t(lang, "registeredVisitor", { name: row.guardName || t(lang, "securityWord"), unit: row.unit || "—" }),
-      at: row.createdAt,
-      entity: "visitor",
-      entityId: row.id,
-      actorId: row.guardId,
-      server: false,
-    })),
-    ...patrolRows.map((row) => ({
-      id: `patrol-${row.id}`,
-      kind: "patrol",
-      icon: iconFor("patrol"),
-      title: row.checkpointName || t(lang, "checkpointWord"),
-      meta: row.guardName || t(lang, "securityWord"),
-      body: t(lang, "scannedCheckpoint", {
-        name: row.guardName || t(lang, "securityWord"),
-        checkpoint: row.checkpointName || t(lang, "aCheckpoint"),
-      }),
-      at: row.createdAt,
-      entity: "patrolScan",
-      entityId: row.id,
-      actorId: row.guardId,
-      server: false,
-    })),
+    ...visitorRows.map((row) => {
+      const own = mine(row.guardId);
+      return {
+        id: `gate-${row.id}`,
+        kind: "gate",
+        icon: iconFor("gate"),
+        title: own ? t(lang, "youRegisteredVisitorTitle") : row.visitorName || t(lang, "visitorWord"),
+        meta: own
+          ? [row.unit, row.plateNumber].filter(Boolean).join(" · ")
+          : [row.unit, row.plateNumber, row.guardName].filter(Boolean).join(" · "),
+        body: own
+          ? t(lang, "youRegisteredVisitor", { name: row.visitorName || t(lang, "visitorWord"), unit: row.unit || "—" })
+          : t(lang, "registeredVisitor", { name: row.guardName || t(lang, "securityWord"), unit: row.unit || "—" }),
+        at: row.createdAt,
+        entity: "visitor",
+        entityId: row.id,
+        actorId: row.guardId,
+        server: false,
+      };
+    }),
+    ...patrolRows.map((row) => {
+      const own = mine(row.guardId);
+      return {
+        id: `patrol-${row.id}`,
+        kind: "patrol",
+        icon: iconFor("patrol"),
+        title: own ? t(lang, "youScannedCheckpointTitle") : row.checkpointName || t(lang, "checkpointWord"),
+        meta: own ? row.checkpointName || "" : row.guardName || t(lang, "securityWord"),
+        body: own
+          ? t(lang, "youScannedCheckpoint", { checkpoint: row.checkpointName || t(lang, "aCheckpoint") })
+          : t(lang, "scannedCheckpoint", {
+              name: row.guardName || t(lang, "securityWord"),
+              checkpoint: row.checkpointName || t(lang, "aCheckpoint"),
+            }),
+        at: row.createdAt,
+        entity: "patrolScan",
+        entityId: row.id,
+        actorId: row.guardId,
+        server: false,
+      };
+    }),
     ...(admin
       ? dutyRows.map((row) => ({
           id: `duty-${row.id}`,
@@ -147,19 +196,6 @@ async function synthesize(readSet, admin = false, lang = "en") {
             server: false,
           }))
       : []),
-    ...noticeRows.map((row) => ({
-      id: `update-${row.id}`,
-      kind: "update",
-      icon: iconFor("update"),
-      title: row.title || t(lang, "dutyBriefing"),
-      meta: row.actorName || t(lang, "roleAdmin"),
-      body: row.message || "",
-      at: row.createdAt,
-      entity: "announcement",
-      entityId: row.id,
-      actorId: row.actorId,
-      server: false,
-    })),
   ]
     .map((row) => ({ ...row, read: readSet.has(String(row.id)) }))
     .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
@@ -200,7 +236,7 @@ export function InboxProvider({ children }) {
   };
 
   const refresh = useCallback(async () => {
-    if (!uid) {
+    if (!uid || !admin) {
       setItems([]);
       ready.current = false;
       seen.current = new Set();
@@ -209,12 +245,16 @@ export function InboxProvider({ children }) {
     setLoading(!ready.current);
     try {
       const data = await api.notifications();
-      const rows = (data.rows || []).map((row) => mapServerRow(row, lang));
+      const scope = { uid, admin };
+      const rows = (data.rows || [])
+        .filter((row) => keepInboxRow(row, scope))
+        .map((row) => mapServerRow(row, lang, uid));
       alertNew(rows);
       setItems((prev) => (sameInbox(prev, rows) ? prev : rows));
     } catch {
       const readSet = await loadReadSet();
-      const rows = await synthesize(readSet, admin, lang);
+      const scope = { uid, admin };
+      const rows = (await synthesize(readSet, { admin, lang, uid })).filter((row) => keepInboxRow(row, scope));
       alertNew(rows);
       setItems((prev) => (sameInbox(prev, rows) ? prev : rows));
     } finally {
@@ -280,11 +320,23 @@ export function InboxProvider({ children }) {
     }
   }, []);
 
+  const clearAll = useCallback(async () => {
+    const prev = items;
+    setItems([]);
+    try {
+      await api.clearAllNotifications();
+    } catch {
+      // Fallback: hide each server row individually, then clear local list.
+      await Promise.allSettled(prev.filter((row) => row.server).map((row) => api.deleteNotification(row.id)));
+      setItems([]);
+    }
+  }, [items]);
+
   const unread = useMemo(() => items.filter((row) => !row.read).length, [items]);
 
   const value = useMemo(
-    () => ({ items, unread, loading, refresh, markRead, markAllRead, remove }),
-    [items, unread, loading, refresh, markRead, markAllRead, remove],
+    () => ({ items, unread, loading, refresh, markRead, markAllRead, clearAll, remove }),
+    [items, unread, loading, refresh, markRead, markAllRead, clearAll, remove],
   );
 
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;

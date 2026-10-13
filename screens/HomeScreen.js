@@ -10,7 +10,6 @@ import {
   AppState,
   Modal,
   Pressable,
-  Image,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,8 +27,6 @@ import ScreenBackdrop from "../components/ScreenBackdrop";
 import SiteMark from "../components/SiteMark";
 import Avatar from "../components/Avatar";
 import { isAdminRole } from "../utils/roles";
-import { useInbox } from "../context/InboxContext";
-import { resolveMediaUrl, withMediaUrls } from "../utils/media";
 
 let AdminHomePanel;
 
@@ -69,13 +66,11 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [deskTick, setDeskTick] = useState(0);
   const [greeting, setGreeting] = useState(greetingKey);
-  const [briefings, setBriefings] = useState([]);
 
   const guardName = profile?.displayName || profile?.username || t("securityWord");
   const post = profile?.address || t("addPost");
   const onDuty = Boolean(duty.clockedIn);
   const admin = isAdminRole(profile);
-  const { unread } = useInbox();
 
   const openProfile = () => {
     const parent = navigation.getParent();
@@ -83,23 +78,13 @@ const HomeScreen = () => {
     else navigation.navigate("Profile");
   };
 
-  const openNotifications = () => {
-    const parent = navigation.getParent();
-    if (parent) parent.navigate("Notifications");
-    else navigation.navigate("Notifications");
-  };
-
-  const openBriefings = () => navigation.navigate("Chat", { tab: "Updates" });
-
   const refresh = async () => {
     try {
-      const [status, siteData, saved, noticeData] = await Promise.all([
+      const [status, siteData, saved] = await Promise.all([
         api.dutyStatus(),
         api.sites().catch(() => ({ rows: [] })),
         AsyncStorage.getItem(SITE_KEY),
-        api.announcements().catch(() => ({ rows: [] })),
       ]);
-      setBriefings((noticeData.rows || []).map(withMediaUrls));
       const rows = siteData.rows || [];
       setSites(rows);
       setDuty({ clockedIn: status.clockedIn, at: status.at, site: status.site });
@@ -148,7 +133,8 @@ const HomeScreen = () => {
       return;
     }
     try {
-      const gps = await getGps();
+      // Clock-in starts full-power GPS; clock-out keeps a strong end stamp. Idle reads elsewhere stay balanced.
+      const gps = await getGps({ high: true });
       const result = await api.clock({ action, site: siteName, ...gps });
       setDuty({
         clockedIn: result.clockedIn,
@@ -200,14 +186,6 @@ const HomeScreen = () => {
             </View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconButton} onPress={openNotifications}>
-              <Ionicons name="notifications" size={22} color="#fff" />
-              {unread ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unread > 9 ? "9+" : unread}</Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={openProfile}>
               <Ionicons name="person-circle" size={24} color="#fff" />
             </TouchableOpacity>
@@ -286,13 +264,12 @@ const HomeScreen = () => {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.card} onPress={() => navigation.navigate("Patrol")} activeOpacity={0.88}>
+        <View style={styles.card}>
           <View style={styles.cardHead}>
             <View style={styles.cardIcon}>
               <Ionicons name="qr-code-outline" size={18} color={colors.primary} />
             </View>
             <Text style={styles.cardTitle}>{t("lastCheckpoint")}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.placeholder} />
           </View>
           {lastPatrol && checkpointName ? (
             <View>
@@ -305,48 +282,18 @@ const HomeScreen = () => {
           ) : (
             <Text style={styles.cardMeta}>{t("noCheckpoint")}</Text>
           )}
-          <View style={styles.cardCta}>
-            <Text style={styles.ctaText}>{t("scanCheckpoint")}</Text>
-            <Ionicons name="chevron-forward-circle" size={22} color={colors.primary} />
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.scanBtn}
+            onPress={() => navigation.navigate("SecurityCameraScan", { mode: "qr" })}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="qr-code-outline" size={18} color="#fff" />
+            <Text style={styles.scanBtnText}>{t("scanCheckpoint")}</Text>
+          </TouchableOpacity>
+        </View>
           </>
         )}
 
-        <View style={styles.briefingWrap}>
-          <TouchableOpacity style={styles.briefingHead} onPress={openBriefings} activeOpacity={0.86}>
-            <View style={styles.cardIcon}>
-              <Ionicons name="megaphone-outline" size={18} color={colors.primary} />
-            </View>
-            <Text style={styles.cardTitle}>{t("dutyBriefing")}</Text>
-            <Text style={styles.briefingMore}>{t("seeAllBriefings")}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.placeholder} />
-          </TouchableOpacity>
-          {briefings.length ? (
-            briefings.slice(0, 3).map((row) => (
-              <TouchableOpacity key={row.id} style={styles.briefingItem} onPress={openBriefings} activeOpacity={0.88}>
-                <Text style={styles.briefingTitle} numberOfLines={2}>
-                  {row.title || t("dutyBriefing")}
-                </Text>
-                {row.message ? (
-                  <Text style={styles.briefingBody} numberOfLines={3}>
-                    {row.message}
-                  </Text>
-                ) : null}
-                {row.imageUrl ? (
-                  <Image source={{ uri: resolveMediaUrl(row.imageUrl) }} style={styles.briefingImage} />
-                ) : null}
-                <Text style={styles.briefingMeta}>
-                  {[row.actorName, row.createdAt ? formatRelativeTime(row.createdAt) : ""]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Text>
-              </TouchableOpacity>
-            ))
-          ) : (
-            <Text style={styles.briefingEmpty}>{t("noBriefingsHint")}</Text>
-          )}
-        </View>
       </ScrollView>
       <Modal visible={siteOpen} transparent animationType="fade" onRequestClose={() => setSiteOpen(false)}>
         <Pressable style={styles.siteOverlay} onPress={() => setSiteOpen(false)}>
@@ -583,26 +530,15 @@ const makeStyles = (colors, shadows, dark) =>
     cardMeta: { marginTop: 2, fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
     cardCta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12 },
     ctaText: { fontSize: 14, fontWeight: "700", color: colors.primary },
-    briefingWrap: {
+    scanBtn: {
       marginTop: 14,
-      backgroundColor: colors.surface,
-      borderRadius: 20,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      ...shadows.card,
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
     },
-    briefingHead: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-    briefingMore: { fontSize: 13, fontWeight: "700", color: colors.primary },
-    briefingItem: {
-      paddingTop: 12,
-      marginTop: 12,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    briefingTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
-    briefingBody: { marginTop: 4, fontSize: 14, lineHeight: 20, color: colors.text },
-    briefingImage: { width: "100%", height: 160, borderRadius: 12, marginTop: 10, backgroundColor: colors.muted },
-    briefingMeta: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colors.textSecondary },
-    briefingEmpty: { fontSize: 13, lineHeight: 19, color: colors.textSecondary },
+    scanBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   });

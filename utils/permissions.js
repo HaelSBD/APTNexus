@@ -26,8 +26,16 @@ export async function readPermissions() {
 export async function askPermission(kind) {
   if (kind === "camera") return pack(await ImagePicker.requestCameraPermissionsAsync());
   if (kind === "photos") return pack(await ImagePicker.requestMediaLibraryPermissionsAsync());
-  if (kind === "location") return pack(await Location.requestForegroundPermissionsAsync());
+  if (kind === "location") return ensureLocationPermission();
   return { granted: false, canAsk: true, status: "undetermined" };
+}
+
+/** Ask for location only when still undetermined — never re-prompt after grant/deny. */
+export async function ensureLocationPermission() {
+  const current = pack(await Location.getForegroundPermissionsAsync().catch(() => ({ status: "undetermined", canAskAgain: true })));
+  if (current.granted || current.status === "denied" || current.status === "blocked") return current;
+  if (!current.canAsk) return current;
+  return pack(await Location.requestForegroundPermissionsAsync());
 }
 
 export function openAppSettings() {

@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSettings, useThemedStyles } from "../context/SettingsContext";
 import { useT } from "../utils/i18n";
-import { useChat } from "../context/ChatContext";
 
 const ION_ICONS = {
   Home: "home-outline",
@@ -12,21 +11,18 @@ const ION_ICONS = {
   Gate: "enter-outline",
   Settings: "settings-outline",
   Team: "people-outline",
-  Chat: "chatbubbles-outline",
-  Inbox: "file-tray-outline",
-  Duty: "shield-outline",
+  Visitors: "clipboard-outline",
+  // ID tab hidden for now — re-enable with IDScreen in AuthedNavigation:
+  // ID: "id-card-outline",
 };
 
 const TAB_LABELS = {
   Home: "tabDuty",
   Patrol: "tabPatrol",
-  ID: "tabId",
   Gate: "tabGate",
   Settings: "tabSettings",
-  Team: "tabTeam",
-  Chat: "tabChat",
-  Inbox: "tabInbox",
-  Duty: "tabDutyBoard",
+  Team: "tabTeams",
+  Visitors: "tabVisitors",
 };
 
 const AppTabBar = ({ state, descriptors, navigation }) => {
@@ -34,7 +30,6 @@ const AppTabBar = ({ state, descriptors, navigation }) => {
   const { colors } = useSettings();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { unread } = useChat();
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -52,26 +47,6 @@ const AppTabBar = ({ state, descriptors, navigation }) => {
             if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
           };
 
-          if (route.name === "ID") {
-            return (
-              <Pressable
-                key={route.key}
-                onPress={onPress}
-                style={styles.idHit}
-                accessibilityRole="button"
-                accessibilityLabel="ID"
-                accessibilityState={{ selected: focused }}
-              >
-                <View style={[styles.idRing, focused && styles.idRingOn]}>
-                  <View style={styles.idCircle}>
-                    <Ionicons name="id-card" size={24} color="#fff" />
-                  </View>
-                </View>
-              </Pressable>
-            );
-          }
-
-          const badge = route.name === "Chat" ? unread : 0;
           return (
             <Pressable
               key={route.key}
@@ -81,18 +56,11 @@ const AppTabBar = ({ state, descriptors, navigation }) => {
               accessibilityState={{ selected: focused }}
             >
               <View style={[styles.sidePill, focused && styles.sidePillOn]}>
-                <View>
-                  <Ionicons
-                    name={ION_ICONS[route.name] || "ellipse-outline"}
-                    size={22}
-                    color={focused ? colors.primaryDark : colors.placeholder}
-                  />
-                  {badge ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
-                    </View>
-                  ) : null}
-                </View>
+                <Ionicons
+                  name={ION_ICONS[route.name] || "ellipse-outline"}
+                  size={22}
+                  color={focused ? colors.primaryDark : colors.placeholder}
+                />
                 <Text style={[styles.sideLabel, focused ? styles.sideLabelOn : null]}>
                   {typeof label === "string" ? label : route.name}
                 </Text>
@@ -132,7 +100,7 @@ const makeStyles = (colors) =>
       minWidth: 52,
       alignItems: "center",
       justifyContent: "center",
-      paddingHorizontal: 8,
+      paddingHorizontal: 6,
       paddingVertical: 6,
       borderRadius: 18,
     },
@@ -145,37 +113,4 @@ const makeStyles = (colors) =>
       color: colors.placeholder,
     },
     sideLabelOn: { color: colors.primaryDark },
-    badge: {
-      position: "absolute",
-      top: -4,
-      right: -10,
-      minWidth: 16,
-      height: 16,
-      borderRadius: 8,
-      paddingHorizontal: 4,
-      backgroundColor: colors.danger,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    badgeText: { color: "#fff", fontSize: 9, fontWeight: "800" },
-    idHit: { width: 74, height: 64, alignItems: "center", justifyContent: "flex-end" },
-    idRing: {
-      width: 58,
-      height: 58,
-      borderRadius: 29,
-      backgroundColor: colors.surface,
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 4,
-      elevation: 6,
-    },
-    idRingOn: { elevation: 8 },
-    idCircle: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-    },
   });

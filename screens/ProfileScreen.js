@@ -149,7 +149,7 @@ const ProfileScreen = () => {
 
   const name = profile?.displayName || profile?.username || "Security";
   const username = profile?.username || "";
-  const roleLabel = superAdmin ? t("roleSuper") : profile?.role === "admin" ? t("roleAdmin") : t("roleSecurity");
+  const roleLabel = superAdmin ? t("roleSuper") : admin ? t("roleAdmin") : t("roleSecurity");
   const onDuty = Boolean(duty?.clockedIn);
 
   return (
@@ -269,17 +269,6 @@ const ProfileScreen = () => {
             )}
           </View>
 
-          {!admin ? (
-            <TouchableOpacity
-              style={styles.settingsBtn}
-              onPress={() => navigation.navigate("Settings")}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="settings-outline" size={18} color={colors.primary} />
-              <Text style={styles.settingsText}>{t("settings")}</Text>
-            </TouchableOpacity>
-          ) : null}
-
           <TouchableOpacity style={styles.logout} onPress={logout} activeOpacity={0.88}>
             <Ionicons name="log-out-outline" size={18} color={colors.danger} />
             <Text style={styles.logoutText}>{t("signOut")}</Text>
@@ -373,19 +362,6 @@ const makeStyles = (colors, shadows) =>
     input: { backgroundColor: colors.muted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 16 },
     save: { marginTop: 16, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: "center", justifyContent: "center", minHeight: 48 },
     saveText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-    settingsBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor: colors.surface,
-      borderRadius: 12,
-      paddingVertical: 14,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginBottom: 10,
-    },
-    settingsText: { color: colors.primary, fontWeight: "700", fontSize: 16 },
     logout: {
       flexDirection: "row",
       alignItems: "center",

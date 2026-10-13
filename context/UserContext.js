@@ -69,7 +69,7 @@ export function UserProvider({ children }) {
       const nextUser = withMediaUrls(data.user);
       setUser(nextUser);
       setProfile(nextUser);
-      if (!isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
+      if (isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
       if (data.duty) setDuty(data.duty);
     } catch {
       await setToken("");
@@ -88,7 +88,7 @@ export function UserProvider({ children }) {
       const nextUser = withMediaUrls(data.user);
       setUser((prev) => (sameUser(prev, nextUser) ? prev : nextUser));
       setProfile((prev) => (sameUser(prev, nextUser) ? prev : nextUser));
-      if (!isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
+      if (isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
       if (data.duty) setDuty((prev) => (sameDuty(prev, data.duty) ? prev : data.duty));
     } catch (error) {
       if (error?.code === "SESSION_REPLACED" || error?.code === "SESSION_EXPIRED") {
@@ -141,7 +141,7 @@ export function UserProvider({ children }) {
         const nextUser = withMediaUrls(data.user);
         setUser(nextUser);
         setProfile(nextUser);
-        if (!isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
+        if (isAdminRole(nextUser)) setSetting("highAccuracyGps", false);
         const status = await api.dutyStatus().catch(() => null);
         if (status) setDuty({ clockedIn: status.clockedIn, at: status.at, site: status.site });
         return data.user;

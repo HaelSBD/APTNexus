@@ -78,7 +78,9 @@ function withImmediateAppIcons(config) {
       main["intent-filter"] = main["intent-filter"].filter((filter) => !isLauncherFilter(filter));
       if (!main["intent-filter"].length) delete main["intent-filter"];
     }
-    const aliases = application["activity-alias"] || [];
+    // Keep exactly one launcher alias per icon — drop duplicates from other plugins.
+    const wanted = new Set([".MainActivityMidnight", ".MainActivityLight", ".MainActivitySunset"]);
+    const aliases = (application["activity-alias"] || []).filter((alias) => wanted.has(alias.$?.["android:name"]));
     upsertAlias(aliases, ".MainActivityMidnight", "@mipmap/ic_launcher", "@mipmap/ic_launcher_round", "true");
     upsertAlias(aliases, ".MainActivityLight", "@mipmap/ic_launcher_light", "@mipmap/ic_launcher_light", "false");
     upsertAlias(aliases, ".MainActivitySunset", "@mipmap/ic_launcher_sunset", "@mipmap/ic_launcher_sunset", "false");

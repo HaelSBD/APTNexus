@@ -17,70 +17,28 @@ const ADMIN_TABS = [
   { key: "gate", labelKey: "gate" },
   { key: "patrol", labelKey: "tabPatrol" },
   { key: "duty", labelKey: "tabDutyBoard" },
-  { key: "chat", labelKey: "tabChat" },
-  { key: "update", labelKey: "tabBriefing" },
   { key: "support", labelKey: "tabSupport" },
   { key: "team", labelKey: "tabTeam" },
 ];
 
-const SECURITY_TABS = [
-  { key: "all", labelKey: "filterAll" },
-  { key: "gate", labelKey: "gate" },
-  { key: "patrol", labelKey: "tabPatrol" },
-  { key: "chat", labelKey: "tabChat" },
-  { key: "update", labelKey: "tabBriefing" },
-];
-
-const openChat = (navigation, params) => {
-  navigation.navigate("Main", { screen: "Chat", params: params || {} });
-};
-
-const openRelated = (navigation, item, admin) => {
-  if (item.kind === "update" || item.entity === "announcement") {
-    openChat(navigation, { tab: "Updates" });
+const openRelated = (navigation, item) => {
+  const parent = navigation.getParent();
+  if (item.kind === "gate") {
+    (parent || navigation).navigate("Visitors");
     return;
   }
-  if (item.kind === "chat") {
-    const channel = item.meta?.channel || "";
-    if (channel.startsWith("g:") || item.meta?.groupId) {
-      openChat(navigation, {
-        tab: "Groups",
-        groupId: item.meta?.groupId || channel.slice(2),
-        groupName: item.meta?.groupName || "",
-        channel,
-      });
-      return;
-    }
-    if (channel.startsWith("dm:") || item.meta?.peerId) {
-      openChat(navigation, {
-        channel,
-        peerId: item.meta?.peerId || "",
-        peerName: item.actorName || "",
-        desk: item.meta?.desk || "",
-      });
-      return;
-    }
-    openChat(navigation, channel ? { channel } : {});
+  if (item.kind === "duty") {
+    navigation.navigate("Home");
     return;
   }
-  if (admin) {
-    const parent = navigation.getParent();
-    if (item.kind === "gate") {
-      (parent || navigation).navigate("Visitors");
-      return;
-    }
-    if (item.kind === "duty" || item.kind === "patrol") {
-      navigation.navigate("Duty");
-      return;
-    }
-    if (item.kind === "team") {
-      if (item.entityId) (parent || navigation).navigate("TeamMember", { userId: item.entityId });
-      else navigation.navigate("Team");
-    }
+  if (item.kind === "patrol") {
+    navigation.navigate("Patrol");
     return;
   }
-  const tab = item.kind === "gate" ? "Gate" : item.kind === "patrol" ? "Patrol" : "Home";
-  navigation.navigate("Main", { screen: tab });
+  if (item.kind === "team") {
+    if (item.entityId) (parent || navigation).navigate("TeamMember", { userId: item.entityId });
+    else navigation.navigate("Team");
+  }
 };
 
 const InboxScreen = () => {
@@ -93,16 +51,23 @@ const InboxScreen = () => {
   const t = useT();
   const { profile, user } = useCurrentUser();
   const admin = isAdminRole(profile || user);
-  const tabs = admin ? ADMIN_TABS : SECURITY_TABS;
-  const { items, unread, refresh, markRead, markAllRead, remove } = useInbox();
+  const tabs = ADMIN_TABS;
+  const { items, unread, refresh, markRead, markAllRead, clearAll, remove } = useInbox();
   const [tab, setTab] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
+      if (!admin) {
+        if (navigation.canGoBack()) navigation.goBack();
+        return undefined;
+      }
       refresh();
-    }, [refresh]),
+      return undefined;
+    }, [admin, navigation, refresh]),
   );
+
+  if (!admin) return null;
 
   const data = useMemo(() => (tab === "all" ? items : items.filter((row) => row.kind === tab)), [items, tab]);
   const unreadInTab = useMemo(() => data.filter((row) => !row.read).length, [data]);
@@ -115,7 +80,7 @@ const InboxScreen = () => {
 
   const onPress = async (item) => {
     if (!item.read) await markRead(item);
-    openRelated(navigation, item, admin);
+    openRelated(navigation, item);
   };
 
   const onLongPress = (item) => {
@@ -124,6 +89,18 @@ const InboxScreen = () => {
       item.read ? null : { text: t("markAsRead"), onPress: () => markRead(item) },
       { text: t("remove"), style: "destructive", onPress: () => remove(item) },
     ].filter(Boolean));
+  };
+
+  const onClearAll = () => {
+    if (!items.length) return;
+    Alert.alert(t("clearAll"), t("clearAllConfirm"), [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("clearAll"),
+        style: "destructive",
+        onPress: () => clearAll(),
+      },
+    ]);
   };
 
   return (
@@ -140,10 +117,17 @@ const InboxScreen = () => {
               title={asTab ? t("tabInbox") : t("notifications")}
               onBack={asTab ? undefined : () => navigation.goBack()}
               right={
-                unread ? (
-                  <TouchableOpacity onPress={markAllRead} hitSlop={8}>
-                    <Text style={styles.readAll}>{t("readAll")}</Text>
-                  </TouchableOpacity>
+                items.length ? (
+                  <View style={styles.headerActions}>
+                    {unread ? (
+                      <TouchableOpacity onPress={markAllRead} hitSlop={8}>
+                        <Text style={styles.readAll}>{t("readAll")}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity onPress={onClearAll} hitSlop={8}>
+                      <Text style={styles.clearAll}>{t("clearAll")}</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : null
               }
             />
@@ -172,9 +156,7 @@ const InboxScreen = () => {
           <View style={styles.emptyWrap}>
             <Ionicons name="notifications-outline" size={26} color={colors.primary} />
             <Text style={styles.emptyTitle}>{tab === "all" ? t("noNotifications") : t("nothingInTab")}</Text>
-            <Text style={styles.empty}>
-              {admin ? t("inboxAdminHint") : t("inboxSecurityHint")}
-            </Text>
+            <Text style={styles.empty}>{t("inboxAdminHint")}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -210,7 +192,9 @@ export default InboxScreen;
 const makeStyles = (colors, shadows) =>
   StyleSheet.create({
     list: { paddingHorizontal: 16 },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 14 },
     readAll: { color: colors.primary, fontWeight: "800", fontSize: 13 },
+    clearAll: { color: colors.danger, fontWeight: "800", fontSize: 13 },
     count: { color: colors.textSecondary, marginTop: -8, marginBottom: 12, fontSize: 13 },
     tabs: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
     tab: {

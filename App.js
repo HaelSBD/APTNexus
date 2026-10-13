@@ -10,8 +10,6 @@ import { ToastHost } from "./components/Toast";
 import { UserProvider } from "./context/UserContext";
 import { SettingsProvider, useSettings } from "./context/SettingsContext";
 import { InboxProvider } from "./context/InboxContext";
-import { ChatProvider } from "./context/ChatContext";
-import { E2eProvider } from "./context/E2eContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { lightColors } from "./theme";
 
@@ -36,14 +34,10 @@ export default function App() {
           <SettingsProvider>
             <ThemedShell>
               <UserProvider>
-                <E2eProvider>
-                  <InboxProvider>
-                    <ChatProvider>
-                      <Navigation />
-                      <ToastHost />
-                    </ChatProvider>
-                  </InboxProvider>
-                </E2eProvider>
+                <InboxProvider>
+                  <Navigation />
+                  <ToastHost />
+                </InboxProvider>
               </UserProvider>
             </ThemedShell>
           </SettingsProvider>

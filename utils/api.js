@@ -47,18 +47,12 @@ function parseResponse(status, text) {
     throw new Error("APTNexus API is not running on the server (bad gateway).");
   }
   if (typeof text === "string" && (/cannot post|cannot get|cannot put|cannot patch|cannot delete/i.test(text) || text.trim().startsWith("<"))) {
-    if (/cannot post \/api\/chat\/groups/i.test(text)) {
-      throw new Error("Group chat API is not deployed yet. Update and restart APTNexus-Admin, then try again.");
-    }
     if (text.trim().startsWith("<")) {
       throw new Error("Could not reach the APTNexus API. Check that the admin API is running.");
     }
   }
   if (status < 200 || status >= 300) {
-    let message = data.error || `Request failed (${status}).`;
-    if (/unknown chat/i.test(String(message))) {
-      message = "Chat API is outdated. Restart APTNexus-Admin on the server, then try again.";
-    }
+    const message = data.error || `Request failed (${status}).`;
     const error = new Error(message);
     error.status = status;
     error.code = data.code || "";
@@ -145,6 +139,11 @@ export const api = {
   patrols: () => request("/api/patrols"),
   scanPatrol: (body) => request("/api/patrols", { method: "POST", body }),
   checkpoints: () => request("/api/checkpoints"),
+  createCheckpoint: (body) => request("/api/checkpoints", { method: "POST", body }),
+  updateCheckpoint: (id, body) => request(`/api/checkpoints/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteCheckpoint: (id) => request(`/api/checkpoints/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  patrolAreas: () => request("/api/patrol-areas"),
+  updatePatrolAreas: (body) => request("/api/patrol-areas", { method: "PATCH", body }),
   sites: () => request("/api/sites"),
   createSite: (body, file) =>
     request("/api/sites", { method: "POST", body, file: file ? { field: "photo", ...file } : undefined }),
@@ -167,46 +166,6 @@ export const api = {
   notifications: () => request("/api/notifications"),
   readNotification: (id, read = true) => request(`/api/notifications/${encodeURIComponent(id)}`, { method: "PATCH", body: { read } }),
   readAllNotifications: () => request("/api/notifications/read-all", { method: "POST", body: {} }),
+  clearAllNotifications: () => request("/api/notifications/clear-all", { method: "POST", body: {} }),
   deleteNotification: (id) => request(`/api/notifications/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  registerDeviceKey: (publicKey) => request("/api/crypto/keys", { method: "PUT", body: { publicKey } }),
-  cryptoPeers: () => request("/api/crypto/peers"),
-  chatContacts: (desk) => request(`/api/chat/contacts?desk=${encodeURIComponent(desk || "admin")}`),
-  chatGroups: () => request("/api/chat/groups"),
-  chatGroup: (id) => request(`/api/chat/groups/${encodeURIComponent(id)}`),
-  createChatGroup: (body) => request("/api/chat/groups", { method: "POST", body }),
-  updateChatGroup: (id, body, file) =>
-    request(`/api/chat/groups/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body,
-      file: file ? { field: "photo", ...file } : undefined,
-    }),
-  chat: (channel) => request(`/api/chat?channel=${encodeURIComponent(channel || "group")}`),
-  chatUnread: (since) => request(`/api/chat/unread${since ? `?since=${encodeURIComponent(since)}` : ""}`),
-  sendChat: (channel, payload) =>
-    request("/api/chat", {
-      method: "POST",
-      body: typeof payload === "string" ? { channel, message: payload } : { channel, ...payload },
-    }),
-  editChat: (id, payload) =>
-    request(`/api/chat/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: typeof payload === "string" ? { message: payload } : payload,
-    }),
-  deleteChat: (id) => request(`/api/chat/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  announcements: () => request("/api/announcements"),
-  createAnnouncement: (body, file) =>
-    request("/api/announcements", { method: "POST", body, file: file ? { field: "photo", ...file } : undefined }),
-  deleteAnnouncement: (id) => request(`/api/announcements/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
-
-export function dmChannel(userA, userB) {
-  const a = String(userA || "");
-  const b = String(userB || "");
-  if (!a || !b || a === b) return "";
-  return a < b ? `dm:${a}:${b}` : `dm:${b}:${a}`;
-}
-
-export function groupChannel(groupId) {
-  const id = String(groupId || "").trim();
-  return id ? `g:${id}` : "";
-}

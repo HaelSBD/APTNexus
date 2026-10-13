@@ -26,7 +26,10 @@ class ExpoAlternateAppIconsModule : Module() {
     val context = appContext.reactContext ?: return null
     val packageManager = context.packageManager
     val packageName = context.packageName
-    return ICON_NAMES.firstOrNull { name -> isEnabled(packageManager, component(packageName, name), name == "Midnight") }
+    // Prefer an explicitly enabled icon; fall back to manifest default (Midnight).
+    return ICON_NAMES.firstOrNull { name ->
+      isEnabled(packageManager, component(packageName, name), name == "Midnight")
+    }
   }
 
   private suspend fun setAlternateAppIcon(icon: String?): String? = withContext(Dispatchers.Main) {
@@ -34,26 +37,41 @@ class ExpoAlternateAppIconsModule : Module() {
     val packageManager = context.packageManager
     val packageName = context.packageName
     val target = if (icon.isNullOrBlank() || icon !in ICON_NAMES) "Midnight" else icon
+    // Disable every launcher alias first, then enable only the target.
+    // Enabling before disabling leaves two LAUNCHER components active and many
+    // Android launchers permanently spawn duplicate home-screen icons.
+    setExclusiveIcon(packageManager, packageName, target)
+    target
+  }
 
-    packageManager.setComponentEnabledSetting(
-      component(packageName, target),
-      PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-      0,
-    )
-    ICON_NAMES.filter { it != target }.forEach { name ->
+  private fun setExclusiveIcon(
+    packageManager: PackageManager,
+    packageName: String,
+    target: String,
+  ) {
+    val flags = PackageManager.DONT_KILL_APP
+    for (name in ICON_NAMES) {
       packageManager.setComponentEnabledSetting(
         component(packageName, name),
         PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-        0,
+        flags,
       )
     }
-    target
+    packageManager.setComponentEnabledSetting(
+      component(packageName, target),
+      PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+      flags,
+    )
   }
 
   private fun component(packageName: String, iconName: String): ComponentName =
     ComponentName(packageName, "$packageName.MainActivity$iconName")
 
-  private fun isEnabled(packageManager: PackageManager, component: ComponentName, manifestDefault: Boolean): Boolean =
+  private fun isEnabled(
+    packageManager: PackageManager,
+    component: ComponentName,
+    manifestDefault: Boolean,
+  ): Boolean =
     when (packageManager.getComponentEnabledSetting(component)) {
       PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
       PackageManager.COMPONENT_ENABLED_STATE_DISABLED -> false
